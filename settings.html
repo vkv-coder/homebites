@@ -28,6 +28,11 @@
   <div class="card">
     <h2>Business Details</h2>
     <form id="settingsForm">
+      <label for="customSlug">Your Link</label>
+      <p style="color:var(--muted); font-size:12.5px; margin:0 0 6px;" id="slugPrefixLabel">homebites.anyapps.in/</p>
+      <input type="text" id="customSlug" placeholder="e.g. vkv-kitchen">
+      <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Letters, numbers, and hyphens only. Must be unique across all HomeBites suppliers.</p>
+
       <label for="businessName">Business / Kitchen Name</label>
       <input type="text" id="businessName" required>
 
@@ -77,8 +82,15 @@ function showMsg(el, text, type) {
 
 let supplierRow = null;
 
+// Page names this app actually serves — a supplier can't claim one of these as their link,
+// since the 404.html redirect trick would then shadow the real page.
+const RESERVED_SLUGS = [
+  'index', 'signup', 'order', 'dashboard', 'settings', 'menu-manager',
+  'privacy', 'css', 'js', 'icons', 'manifest', 'service-worker', '404'
+];
+
 function renderShareLink() {
-  const link = window.location.origin + window.location.pathname.replace('settings.html', 'order.html') + '?supplier=' + supplierRow.slug;
+  const link = window.location.origin + '/' + supplierRow.slug;
   document.getElementById('shareLinkBox').textContent = link;
   QRCode.toCanvas(document.getElementById('shareQrCanvas'), link, { width: 220, margin: 1 }, (err) => {
     if (err) console.warn('QR generation failed:', err);
@@ -88,6 +100,7 @@ function renderShareLink() {
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
+  const slug = slugify(document.getElementById('customSlug').value);
   const businessName = document.getElementById('businessName').value.trim();
   const ownerPhone = normalizePhone(document.getElementById('ownerPhone').value);
   const upiVpa = document.getElementById('upiVpa').value.trim();
@@ -100,6 +113,14 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     showMsg(msgEl, 'Please enter your business/kitchen name.', 'error');
     return;
   }
+  if (!slug) {
+    showMsg(msgEl, 'Please enter a link (letters, numbers, and hyphens).', 'error');
+    return;
+  }
+  if (RESERVED_SLUGS.includes(slug)) {
+    showMsg(msgEl, '"' + slug + '" is reserved and can\'t be used as your link. Please choose another.', 'error');
+    return;
+  }
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Saving...';
@@ -107,6 +128,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   const { error } = await supabaseClient
     .from('hb_suppliers')
     .update({
+      slug: slug,
       business_name: businessName,
       owner_phone: ownerPhone || null,
       upi_vpa: upiVpa || null,
@@ -119,11 +141,17 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   btn.textContent = 'Save Changes';
 
   if (error) {
-    showMsg(msgEl, error.message, 'error');
+    if (error.code === '23505') {
+      showMsg(msgEl, 'That link is already taken by another supplier. Please choose a different one.', 'error');
+    } else {
+      showMsg(msgEl, error.message, 'error');
+    }
     return;
   }
 
+  supplierRow.slug = slug;
   supplierRow.business_name = businessName;
+  document.getElementById('customSlug').value = slug;
   renderShareLink();
   showMsg(msgEl, 'Saved.', 'success');
 });
@@ -150,6 +178,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 
   supplierRow = profile;
 
+  document.getElementById('customSlug').value = profile.slug || '';
   document.getElementById('businessName').value = profile.business_name || '';
   document.getElementById('ownerPhone').value = profile.owner_phone || '';
   document.getElementById('upiVpa').value = profile.upi_vpa || '';

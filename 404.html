@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div class="page">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<script>
+// GitHub Pages serves this file for any path that isn't a real file — used here to turn
+// short links like homebites.anyapps.in/vkv-kitchen into homebites.anyapps.in/order.html?supplier=vkv-kitchen.
+// A path with more than one segment, or no segment at all, isn't a supplier link — send it home instead.
+const segments = window.location.pathname.split('/').filter(Boolean);
+
+if (segments.length === 1) {
+  window.location.replace('/order.html?supplier=' + encodeURIComponent(segments[0]));
+} else {
+  window.location.replace('/index.html');
+}
+</script>
+
+</body>
+</html>

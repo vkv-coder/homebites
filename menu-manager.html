@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Menu Manager</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1>Menu Manager</h1>
+    <a href="dashboard.html" class="icon-btn">&larr; Dashboard</a>
+  </div>
+
+  <div class="staff-list" id="menuList">
+    <div class="empty-state">Loading menu...</div>
+  </div>
+
+  <div class="card" id="addItemCard">
+    <h2>Add Menu Item</h2>
+    <form id="addItemForm">
+      <label for="itemName">Item Name</label>
+      <input type="text" id="itemName" required placeholder="e.g. Chicken Biryani">
+
+      <label for="itemPrice">Price (&#8377;)</label>
+      <input type="text" id="itemPrice" required inputmode="decimal" placeholder="e.g. 150">
+
+      <label for="itemUnit">Unit (optional)</label>
+      <input type="text" id="itemUnit" placeholder="e.g. per box, per kg, per plate">
+
+      <button type="submit" class="btn-primary" id="addItemBtn">Add Item</button>
+    </form>
+    <div class="msg" id="addItemMsg"></div>
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let supplierId = null;
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function formatPrice(price) {
+  const n = Number(price);
+  return '₹' + (Number.isInteger(n) ? n : n.toFixed(2));
+}
+
+async function loadMenu() {
+  const listEl = document.getElementById('menuList');
+  const { data, error } = await supabaseClient
+    .from('menu_items')
+    .select('id, name, price, unit, sort_order, is_paused')
+    .eq('supplier_id', supplierId)
+    .eq('is_deleted', false)
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    listEl.innerHTML = '<div class="empty-state">Could not load menu: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    listEl.innerHTML = '<div class="empty-state">No menu items yet — add your first one below.</div>';
+    return;
+  }
+
+  listEl.innerHTML = data.map((row) => `
+    <div class="staff-row" data-id="${row.id}">
+      <div class="info">
+        <h4>${escapeHtml(row.name)}</h4>
+        <p><strong>${formatPrice(row.price)}</strong>${row.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(row.unit) + ')</span>' : ''}</p>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+        <label class="toggle-switch">
+          <input type="checkbox" class="available-toggle" ${row.is_paused ? '' : 'checked'} data-id="${row.id}">
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="avail-status-label" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; ${row.is_paused ? 'background:#ffd400; color:#3a2e00;' : 'color:var(--muted);'}">${row.is_paused ? 'Paused' : 'Available'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.available-toggle').forEach((toggle) => {
+    toggle.addEventListener('change', onToggleAvailable);
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function onToggleAvailable(e) {
+  const checkbox = e.target;
+  const id = checkbox.dataset.id;
+  const isAvailable = checkbox.checked;
+  const label = checkbox.closest('div').querySelector('.avail-status-label');
+
+  checkbox.disabled = true;
+  const { error } = await supabaseClient
+    .from('menu_items')
+    .update({ is_paused: !isAvailable })
+    .eq('id', id);
+  checkbox.disabled = false;
+
+  if (error) {
+    checkbox.checked = !isAvailable;
+    alert('Could not update item: ' + error.message);
+    return;
+  }
+  if (label) {
+    label.textContent = isAvailable ? 'Available' : 'Paused';
+    label.style.background = isAvailable ? '' : '#ffd400';
+    label.style.color = isAvailable ? 'var(--muted)' : '#3a2e00';
+  }
+}
+
+document.getElementById('addItemForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById('itemName').value.trim();
+  const priceRaw = document.getElementById('itemPrice').value.trim();
+  const unit = document.getElementById('itemUnit').value.trim();
+  const msgEl = document.getElementById('addItemMsg');
+  const btn = document.getElementById('addItemBtn');
+
+  const price = Number(priceRaw);
+  if (!name) {
+    showMsg(msgEl, 'Please enter an item name.', 'error');
+    return;
+  }
+  if (!priceRaw || isNaN(price) || price <= 0) {
+    showMsg(msgEl, 'Please enter a valid price.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Adding...';
+
+  const { error } = await supabaseClient
+    .from('menu_items')
+    .insert({
+      supplier_id: supplierId,
+      name: name,
+      price: price,
+      unit: unit || null,
+      is_paused: false,
+      is_deleted: false
+    });
+
+  btn.disabled = false;
+  btn.textContent = 'Add Item';
+
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  showMsg(msgEl, 'Item added.', 'success');
+  document.getElementById('addItemForm').reset();
+  loadMenu();
+});
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('suppliers')
+    .select('id, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierId = profile.id;
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+
+  loadMenu();
+})();
+</script>
+</body>
+</html>

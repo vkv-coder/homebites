@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Supplier Signup</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page">
+
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1>HomeBites</h1>
+    <p class="tagline">Home Supplier Ordering &amp; Delivery</p>
+  </div>
+
+  <div class="card" id="signupCard">
+    <h2>New Supplier Signup</h2>
+    <form id="signupForm">
+      <label for="businessName">Business / Kitchen Name</label>
+      <input type="text" id="businessName" required placeholder="e.g. Meena's Kitchen">
+
+      <label for="ownerPhone">Your Phone Number</label>
+      <input type="tel" id="ownerPhone" required inputmode="numeric" placeholder="10-digit mobile number">
+
+      <label for="ownerEmail">Email</label>
+      <input type="email" id="ownerEmail" required autocomplete="username" placeholder="you@example.com">
+
+      <label for="ownerPassword">Password</label>
+      <input type="password" id="ownerPassword" required autocomplete="new-password" placeholder="At least 6 characters">
+
+      <button type="submit" class="btn-primary" id="signupBtn">Create Account</button>
+    </form>
+
+    <div class="msg" id="signupMsg"></div>
+
+    <div class="links">
+      Already have an account? <a href="index.html">Log in</a>
+    </div>
+  </div>
+
+  <!-- Shown after successful submit -->
+  <div class="card" id="waitingCard" style="display:none;">
+    <h2>Signup Received</h2>
+    <div class="msg show msg-warn">
+      Thanks! Your signup has been received and is waiting for approval. We'll notify you once you're approved. You can then log in from the Supplier Login page.
+    </div>
+    <a href="index.html" class="btn btn-outline" style="margin-top:16px;">Back to Login</a>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const businessName = document.getElementById('businessName').value.trim();
+  const ownerPhone = normalizePhone(document.getElementById('ownerPhone').value);
+  const ownerEmail = document.getElementById('ownerEmail').value.trim();
+  const ownerPassword = document.getElementById('ownerPassword').value;
+  const msgEl = document.getElementById('signupMsg');
+  const btn = document.getElementById('signupBtn');
+
+  if (!businessName) {
+    showMsg(msgEl, 'Please enter your business/kitchen name.', 'error');
+    return;
+  }
+  if (ownerPhone.length !== 10) {
+    showMsg(msgEl, 'Please enter a valid 10-digit phone number.', 'error');
+    return;
+  }
+  if (ownerPassword.length < 6) {
+    showMsg(msgEl, 'Password must be at least 6 characters.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Creating account...';
+
+  const { data: authData, error: authError } = await supabaseClient.auth.signUp({
+    email: ownerEmail,
+    password: ownerPassword
+  });
+
+  if (authError) {
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    showMsg(msgEl, authError.message, 'error');
+    return;
+  }
+
+  const newUserId = authData.user ? authData.user.id : null;
+
+  if (!newUserId) {
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    showMsg(msgEl, 'Signup did not return a user. Please try again.', 'error');
+    return;
+  }
+
+  const slug = slugify(businessName) + '-' + newUserId.slice(0, 6);
+
+  const { error: profileError } = await supabaseClient
+    .from('suppliers')
+    .insert({
+      owner_user_id: newUserId,
+      business_name: businessName,
+      owner_email: ownerEmail,
+      owner_phone: ownerPhone,
+      slug: slug,
+      approval_status: 'pending'
+    });
+
+  btn.disabled = false;
+  btn.textContent = 'Create Account';
+
+  if (profileError) {
+    showMsg(msgEl, 'Account created, but saving your details failed: ' + profileError.message + '. Please contact support.', 'error');
+    return;
+  }
+
+  notifyTelegram(
+    'New HomeBites supplier signup: ' + businessName + ' - ' + ownerEmail +
+    '. Approve in Supabase suppliers table (set approval_status=\'approved\').'
+  );
+
+  document.getElementById('signupCard').style.display = 'none';
+  document.getElementById('waitingCard').style.display = 'block';
+});
+</script>
+</body>
+</html>

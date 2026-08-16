@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Order</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="has-fixed-footer">
+
+<div class="page" id="loadingScreen">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<div class="page" id="errorScreen" style="display:none;">
+  <div class="card center-text">
+    <h2>Not Available</h2>
+    <p id="errorMsg" style="color:var(--muted);">This order link isn't valid.</p>
+  </div>
+</div>
+
+<div class="page" id="phoneScreen" style="display:none;">
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1 id="supplierNameHeading">HomeBites</h1>
+    <p class="tagline">Order from a home kitchen</p>
+  </div>
+  <div class="card">
+    <h2>Your Phone Number</h2>
+    <form id="phoneForm">
+      <label for="phoneInput">Phone Number</label>
+      <input type="tel" id="phoneInput" required inputmode="numeric" placeholder="10-digit mobile number">
+      <button type="submit" class="btn-primary" id="phoneContinueBtn">Continue</button>
+    </form>
+    <div class="msg" id="phoneMsg"></div>
+  </div>
+</div>
+
+<div class="page" id="detailsScreen" style="display:none;">
+  <div class="card">
+    <h2>Delivery Details</h2>
+    <form id="detailsForm">
+      <label for="detailsName">Your Name</label>
+      <input type="text" id="detailsName" required placeholder="Full name">
+
+      <label for="detailsAddress">Delivery Address</label>
+      <textarea id="detailsAddress" required placeholder="House/flat no., street, landmark, area"></textarea>
+
+      <label for="detailsMapLink">Google Maps Link (optional)</label>
+      <input type="url" id="detailsMapLink" placeholder="Paste your location link from Google Maps">
+
+      <button type="submit" class="btn-primary" id="detailsContinueBtn">Continue to Menu</button>
+    </form>
+    <div class="msg" id="detailsMsg"></div>
+    <button type="button" class="btn-outline" id="detailsBackBtn">&larr; Change Phone Number</button>
+  </div>
+</div>
+
+<div class="page" id="orderFormScreen" style="display:none;">
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1 id="orderFormSupplierName">Supplier</h1>
+    <p class="tagline" id="orderFormDeliveryLine">Delivering to...</p>
+  </div>
+
+  <div class="top-total-bar" id="topTotalBar">
+    Total: <span id="topTotalAmount">₹0</span>
+  </div>
+
+  <div class="staff-list" id="menuListWrap" style="margin-top:16px;">
+    <div class="empty-state" id="menuLoadingMsg">Loading menu...</div>
+  </div>
+
+  <div class="msg" id="orderFormMsg"></div>
+
+  <div class="cart-bar" id="cartBar">
+    <span class="cart-total" id="cartTotal">Add items to order</span>
+    <button type="button" id="placeOrderBtn" disabled>Place Order</button>
+  </div>
+</div>
+
+<div class="page" id="waitingScreen" style="display:none;">
+  <div class="card center-text">
+    <h2>Almost There</h2>
+    <p style="color:var(--muted);">Total: <strong id="waitingAmount"></strong></p>
+
+    <a href="#" class="btn upi-pay-btn" id="upiPayBtn">Pay via UPI</a>
+
+    <div class="qr-wrap">
+      <canvas id="upiQrCanvas"></canvas>
+    </div>
+
+    <p style="color:var(--muted); font-size:13px; margin:14px 0 4px;">— OR —</p>
+    <p style="color:var(--muted);">Pay <strong>cash on delivery</strong> — no need to do anything here.</p>
+
+    <div class="waiting-spinner"></div>
+    <p style="color:var(--muted); font-size:13px;">Waiting for the supplier to confirm your payment...</p>
+  </div>
+</div>
+
+<div class="page" id="billScreen" style="display:none;">
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1 id="billSupplierName">Supplier</h1>
+    <p class="tagline">Order Confirmed</p>
+  </div>
+
+  <div class="card">
+    <h2>Your Order</h2>
+    <table class="bill-table">
+      <thead>
+        <tr><th>Item</th><th class="num">Qty</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody id="billItemsBody"></tbody>
+      <tfoot>
+        <tr class="bill-total-row"><td colspan="2">Total</td><td class="num" id="billTotalCell"></td></tr>
+      </tfoot>
+    </table>
+
+    <a href="#" class="btn upi-pay-btn" id="whatsappBillBtn" style="background:#25D366;">Get Bill on WhatsApp</a>
+    <button type="button" class="btn-outline" id="orderMoreBtn">Order More</button>
+  </div>
+</div>
+
+<footer class="site-footer footer-fixed">
+  <div><a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+const params = new URLSearchParams(window.location.search);
+const supplierSlug = params.get('supplier');
+
+let supplierInfo = null;
+let menuItems = [];
+const cart = {}; // menu_item_id -> {id, name, price, unit, qty}
+let pollTimer = null;
+let customerDraft = { phone: '', name: '', address: '', map_link: '' };
+let currentOrderId = null;
+
+function showScreen(id) {
+  ['loadingScreen', 'errorScreen', 'phoneScreen', 'detailsScreen', 'orderFormScreen', 'waitingScreen', 'billScreen'].forEach((s) => {
+    document.getElementById(s).style.display = s === id ? 'flex' : 'none';
+  });
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function localOrderKey() {
+  return 'hb_order_' + (supplierInfo ? supplierInfo.id : '');
+}
+
+function getLocalOrder() {
+  try {
+    return JSON.parse(localStorage.getItem(localOrderKey()) || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+
+function setLocalOrder(data) {
+  localStorage.setItem(localOrderKey(), JSON.stringify(data));
+}
+
+function clearLocalOrder() {
+  localStorage.removeItem(localOrderKey());
+}
+
+// ---------- Phone entry ----------
+
+document.getElementById('phoneForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const phone = normalizePhone(document.getElementById('phoneInput').value);
+  const msgEl = document.getElementById('phoneMsg');
+  const btn = document.getElementById('phoneContinueBtn');
+
+  if (phone.length !== 10) {
+    showMsg(msgEl, 'Please enter a valid 10-digit phone number.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Checking...';
+
+  customerDraft.phone = phone;
+  localStorage.setItem('hb_last_phone', phone);
+
+  const { data } = await supabaseClient.rpc('get_customer_by_phone', { p_phone: phone });
+
+  btn.disabled = false;
+  btn.textContent = 'Continue';
+
+  const match = (data && data.length > 0) ? data[0] : null;
+  customerDraft.name = match ? (match.name || '') : '';
+  customerDraft.address = match ? (match.address || '') : '';
+  customerDraft.map_link = match ? (match.map_link || '') : '';
+
+  document.getElementById('detailsName').value = customerDraft.name;
+  document.getElementById('detailsAddress').value = customerDraft.address;
+  document.getElementById('detailsMapLink').value = customerDraft.map_link;
+
+  showScreen('detailsScreen');
+});
+
+// ---------- Delivery details ----------
+
+document.getElementById('detailsForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = document.getElementById('detailsName').value.trim();
+  const address = document.getElementById('detailsAddress').value.trim();
+  const mapLink = document.getElementById('detailsMapLink').value.trim();
+  const msgEl = document.getElementById('detailsMsg');
+
+  if (!name) { showMsg(msgEl, 'Please enter your name.', 'error'); return; }
+  if (!address) { showMsg(msgEl, 'Please enter your delivery address.', 'error'); return; }
+
+  customerDraft.name = name;
+  customerDraft.address = address;
+  customerDraft.map_link = mapLink;
+
+  showOrderForm();
+});
+
+document.getElementById('detailsBackBtn').addEventListener('click', () => {
+  showScreen('phoneScreen');
+});
+
+// ---------- Menu + cart ----------
+
+async function loadMenu() {
+  const { data, error } = await supabaseClient
+    .from('menu_items')
+    .select('id, name, price, unit')
+    .eq('supplier_id', supplierInfo.id)
+    .eq('is_paused', false)
+    .eq('is_deleted', false)
+    .order('sort_order', { ascending: true });
+
+  const wrap = document.getElementById('menuListWrap');
+
+  if (error) {
+    wrap.innerHTML = '<div class="empty-state">Could not load menu: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  menuItems = data || [];
+  if (menuItems.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">Menu is not available right now.</div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="menu-grid">
+      ${menuItems.map((item) => `
+        <div class="menu-card" data-id="${item.id}">
+          <div class="info">
+            <h4>${escapeHtml(item.name)}</h4>
+            <p><strong>₹${item.price}</strong>${item.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(item.unit) + ')</span>' : ''}</p>
+          </div>
+          <div class="qty-stepper">
+            <button type="button" class="qty-minus" data-id="${item.id}">&minus;</button>
+            <span class="qty-value" id="qty-${item.id}">0</span>
+            <button type="button" class="qty-plus" data-id="${item.id}">+</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('.qty-plus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, 1)));
+  document.querySelectorAll('.qty-minus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, -1)));
+}
+
+function changeQty(itemId, delta) {
+  const item = menuItems.find((m) => m.id === itemId);
+  if (!item) return;
+
+  const current = cart[itemId] ? cart[itemId].qty : 0;
+  const next = Math.max(0, current + delta);
+
+  if (next === 0) {
+    delete cart[itemId];
+  } else {
+    cart[itemId] = { id: item.id, name: item.name, price: item.price, unit: item.unit, qty: next };
+  }
+
+  document.getElementById('qty-' + itemId).textContent = next;
+  renderCartBar();
+}
+
+function cartTotal() {
+  return Object.values(cart).reduce((sum, i) => sum + i.price * i.qty, 0);
+}
+
+function renderCartBar() {
+  const items = Object.values(cart);
+  const totalEl = document.getElementById('cartTotal');
+  const btn = document.getElementById('placeOrderBtn');
+
+  document.getElementById('topTotalAmount').textContent = '₹' + cartTotal();
+
+  if (items.length === 0) {
+    totalEl.textContent = 'Add items to order';
+    btn.disabled = true;
+  } else {
+    totalEl.textContent = '₹' + cartTotal() + ' (' + items.length + ' item' + (items.length > 1 ? 's' : '') + ')';
+    btn.disabled = false;
+  }
+}
+
+// ---------- Order form ----------
+
+function showOrderForm() {
+  document.getElementById('orderFormSupplierName').textContent = supplierInfo.business_name;
+  document.getElementById('orderFormDeliveryLine').textContent = 'Delivering to: ' + customerDraft.name + ', ' + customerDraft.address;
+  showScreen('orderFormScreen');
+}
+
+document.getElementById('placeOrderBtn').addEventListener('click', async () => {
+  const msgEl = document.getElementById('orderFormMsg');
+  const items = Object.values(cart);
+
+  if (items.length === 0) {
+    showMsg(msgEl, 'Please add at least one item.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('placeOrderBtn');
+  btn.disabled = true;
+  btn.textContent = 'Placing order...';
+
+  try {
+    const orderId = crypto.randomUUID();
+    const total = cartTotal();
+
+    const { error: orderError } = await supabaseClient
+      .from('orders')
+      .insert({
+        id: orderId,
+        supplier_id: supplierInfo.id,
+        customer_phone: customerDraft.phone,
+        customer_name: customerDraft.name,
+        customer_address: customerDraft.address,
+        customer_map_link: customerDraft.map_link || null,
+        status: 'pending_payment',
+        total_amount: total
+      });
+    if (orderError) throw orderError;
+
+    const orderItemsPayload = items.map((i) => ({
+      order_id: orderId,
+      menu_item_id: i.id,
+      item_name: i.name,
+      price: i.price,
+      qty: i.qty
+    }));
+    const { error: itemsError } = await supabaseClient.from('order_items').insert(orderItemsPayload);
+    if (itemsError) throw itemsError;
+
+    try {
+      await supabaseClient.rpc('upsert_customer', {
+        p_phone: customerDraft.phone,
+        p_name: customerDraft.name,
+        p_address: customerDraft.address,
+        p_map_link: customerDraft.map_link || null
+      });
+    } catch (upsertErr) {
+      console.warn('Could not save customer profile:', upsertErr);
+    }
+
+    setLocalOrder({
+      orderId: orderId,
+      items: items,
+      totalAmount: total,
+      placedAt: Date.now(),
+      customerPhone: customerDraft.phone
+    });
+
+    for (const key in cart) delete cart[key];
+    renderCartBar();
+
+    showWaitingScreen(orderId, total, items);
+  } catch (err) {
+    showMsg(msgEl, err.message || 'Something went wrong placing your order.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Place Order';
+  }
+});
+
+// ---------- Waiting screen (pending payment) ----------
+
+function showWaitingScreen(orderId, totalAmount, items) {
+  currentOrderId = orderId;
+  document.getElementById('waitingAmount').textContent = '₹' + totalAmount;
+
+  const upiLink = buildUpiLink(supplierInfo.upi_vpa, supplierInfo.upi_payee_name, totalAmount, supplierInfo.business_name + ' Order');
+  document.getElementById('upiPayBtn').href = upiLink;
+
+  const canvas = document.getElementById('upiQrCanvas');
+  QRCode.toCanvas(canvas, upiLink, { width: 200, margin: 1 }, (err) => {
+    if (err) console.warn('QR generation failed:', err);
+  });
+
+  showScreen('waitingScreen');
+  startPolling(orderId);
+}
+
+function startPolling(orderId) {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    const { data, error } = await supabaseClient.rpc('get_order_status', { p_order_id: orderId });
+    if (error) return;
+    const status = (data && data.length > 0) ? data[0] : null;
+    if (!status) return;
+
+    if (status.status === 'confirmed') {
+      stopPolling();
+      showBillScreen(status);
+    } else if (status.status === 'cancelled') {
+      stopPolling();
+      clearLocalOrder();
+      currentOrderId = null;
+      alert('Sorry, this order was cancelled by the supplier. Please place a new order.');
+      showOrderForm();
+    }
+  }, 4000);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+// ---------- Bill screen ----------
+
+function showBillScreen(status) {
+  const local = getLocalOrder();
+  const items = local ? local.items : [];
+
+  document.getElementById('billSupplierName').textContent = supplierInfo.business_name;
+  document.getElementById('billItemsBody').innerHTML = items.map((i) => `
+    <tr>
+      <td>${escapeHtml(i.name)}</td>
+      <td class="num">${i.qty}</td>
+      <td class="num">₹${i.price * i.qty}</td>
+    </tr>
+  `).join('');
+  document.getElementById('billTotalCell').textContent = '₹' + status.total_amount;
+
+  const billItems = items.map((i) => ({ item_name: i.name, price: i.price, qty: i.qty }));
+  const billText = buildBillText(supplierInfo.business_name, billItems, status.total_amount, status.payment_method);
+  const phone = local ? local.customerPhone : customerDraft.phone;
+  const waNumber = toWhatsAppNumber(phone);
+  document.getElementById('whatsappBillBtn').href = 'https://wa.me/' + waNumber + '?text=' + encodeURIComponent(billText);
+
+  showScreen('billScreen');
+}
+
+document.getElementById('orderMoreBtn').addEventListener('click', () => {
+  clearLocalOrder();
+  currentOrderId = null;
+  showOrderForm();
+});
+
+// ---------- Init ----------
+
+(async () => {
+  if (!supplierSlug) {
+    document.getElementById('errorMsg').textContent = 'No supplier link specified. Please use the link your supplier shared with you.';
+    showScreen('errorScreen');
+    return;
+  }
+
+  const { data, error } = await supabaseClient.rpc('get_supplier_public', { p_slug: supplierSlug });
+  const supplier = (data && data.length > 0) ? data[0] : null;
+
+  if (error || !supplier) {
+    document.getElementById('errorMsg').textContent = 'This order link is not valid.';
+    showScreen('errorScreen');
+    return;
+  }
+  if (!supplier.is_active) {
+    document.getElementById('errorMsg').textContent = supplier.business_name + ' is not accepting orders right now. Please check back later.';
+    showScreen('errorScreen');
+    return;
+  }
+
+  supplierInfo = supplier;
+  document.title = supplier.business_name + ' - Order';
+  document.getElementById('supplierNameHeading').textContent = supplier.business_name;
+
+  await loadMenu();
+
+  const localOrder = getLocalOrder();
+  if (localOrder) {
+    const { data: statusData } = await supabaseClient.rpc('get_order_status', { p_order_id: localOrder.orderId });
+    const status = (statusData && statusData.length > 0) ? statusData[0] : null;
+
+    if (status && status.status === 'pending_payment') {
+      customerDraft.phone = localOrder.customerPhone;
+      showWaitingScreen(localOrder.orderId, localOrder.totalAmount, localOrder.items);
+      return;
+    } else if (status && status.status === 'confirmed') {
+      customerDraft.phone = localOrder.customerPhone;
+      showBillScreen(status);
+      return;
+    } else {
+      clearLocalOrder();
+    }
+  }
+
+  const lastPhone = localStorage.getItem('hb_last_phone');
+  if (lastPhone) document.getElementById('phoneInput').value = lastPhone;
+
+  showScreen('phoneScreen');
+})();
+</script>
+</body>
+</html>

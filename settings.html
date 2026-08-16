@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Settings</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1>Settings</h1>
+    <a href="dashboard.html" class="icon-btn">&larr; Dashboard</a>
+  </div>
+
+  <div class="section-title">Your Order Link</div>
+  <div class="share-link-box" id="shareLinkBox">Loading...</div>
+  <div class="qr-card" id="shareQrCard" style="margin-bottom:20px;">
+    <canvas id="shareQrCanvas"></canvas>
+    <p>Share this with customers</p>
+  </div>
+
+  <div class="card">
+    <h2>Business Details</h2>
+    <form id="settingsForm">
+      <label for="businessName">Business / Kitchen Name</label>
+      <input type="text" id="businessName" required>
+
+      <label for="ownerPhone">Your Phone Number</label>
+      <input type="tel" id="ownerPhone" inputmode="numeric" placeholder="10-digit mobile number">
+
+      <label for="upiVpa">UPI ID (VPA)</label>
+      <input type="text" id="upiVpa" placeholder="e.g. yourname@okhdfcbank">
+
+      <label for="upiPayeeName">UPI Payee Name</label>
+      <input type="text" id="upiPayeeName" placeholder="Must match your bank account name">
+      <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">This must exactly match the name registered with your UPI ID, or customers' payment apps may block the payment as a mismatch.</p>
+
+      <label for="isActiveToggle" style="margin-top:20px;">Accepting Orders</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="isActiveToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+      <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Turn off to pause new orders (e.g. when you're closed or fully booked) — your order link will show "not accepting orders" to customers.</p>
+
+      <button type="submit" class="btn-primary" id="saveBtn">Save Changes</button>
+    </form>
+    <div class="msg" id="settingsMsg"></div>
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+let supplierRow = null;
+
+function renderShareLink() {
+  const link = window.location.origin + window.location.pathname.replace('settings.html', 'order.html') + '?supplier=' + supplierRow.slug;
+  document.getElementById('shareLinkBox').textContent = link;
+  QRCode.toCanvas(document.getElementById('shareQrCanvas'), link, { width: 220, margin: 1 }, (err) => {
+    if (err) console.warn('QR generation failed:', err);
+  });
+}
+
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const businessName = document.getElementById('businessName').value.trim();
+  const ownerPhone = normalizePhone(document.getElementById('ownerPhone').value);
+  const upiVpa = document.getElementById('upiVpa').value.trim();
+  const upiPayeeName = document.getElementById('upiPayeeName').value.trim();
+  const isActive = document.getElementById('isActiveToggle').checked;
+  const msgEl = document.getElementById('settingsMsg');
+  const btn = document.getElementById('saveBtn');
+
+  if (!businessName) {
+    showMsg(msgEl, 'Please enter your business/kitchen name.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Saving...';
+
+  const { error } = await supabaseClient
+    .from('suppliers')
+    .update({
+      business_name: businessName,
+      owner_phone: ownerPhone || null,
+      upi_vpa: upiVpa || null,
+      upi_payee_name: upiPayeeName || null,
+      is_active: isActive
+    })
+    .eq('id', supplierRow.id);
+
+  btn.disabled = false;
+  btn.textContent = 'Save Changes';
+
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  supplierRow.business_name = businessName;
+  renderShareLink();
+  showMsg(msgEl, 'Saved.', 'success');
+});
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('suppliers')
+    .select('id, slug, business_name, owner_phone, upi_vpa, upi_payee_name, is_active, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierRow = profile;
+
+  document.getElementById('businessName').value = profile.business_name || '';
+  document.getElementById('ownerPhone').value = profile.owner_phone || '';
+  document.getElementById('upiVpa').value = profile.upi_vpa || '';
+  document.getElementById('upiPayeeName').value = profile.upi_payee_name || '';
+  document.getElementById('isActiveToggle').checked = profile.is_active;
+
+  renderShareLink();
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+})();
+</script>
+</body>
+</html>

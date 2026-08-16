@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Dashboard</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1 id="dashboardTitle">Dashboard</h1>
+  </div>
+
+  <div class="top-nav-strip">
+    <a href="menu-manager.html">Menu</a>
+    <a href="settings.html">Settings</a>
+    <a href="#" id="logoutLink">Log Out</a>
+  </div>
+
+  <div class="tab-strip" id="tabStrip">
+    <button type="button" class="active" data-tab="pending">Pending</button>
+    <button type="button" data-tab="confirmed">Confirmed</button>
+  </div>
+
+  <div id="pendingPane">
+    <div id="pendingList"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <div id="confirmedPane" style="display:none;">
+    <div id="confirmedList"><div class="empty-state">Loading...</div></div>
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let supplierId = null;
+let refreshTimer = null;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.getElementById('logoutLink').addEventListener('click', async (e) => {
+  e.preventDefault();
+  await supabaseClient.auth.signOut();
+  window.location.href = 'index.html';
+});
+
+// ---------- Tabs ----------
+
+document.querySelectorAll('#tabStrip button').forEach((btn) => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+
+function showTab(tab) {
+  document.getElementById('pendingPane').style.display = tab === 'pending' ? 'block' : 'none';
+  document.getElementById('confirmedPane').style.display = tab === 'confirmed' ? 'block' : 'none';
+  document.querySelectorAll('#tabStrip button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+}
+
+// ---------- Pending ----------
+
+async function loadPending() {
+  const wrap = document.getElementById('pendingList');
+  const { data: orders, error } = await supabaseClient
+    .from('orders')
+    .select('id, customer_name, customer_phone, customer_address, total_amount, created_at')
+    .eq('supplier_id', supplierId)
+    .eq('status', 'pending_payment')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    wrap.innerHTML = '<div class="empty-state">Could not load: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  if (!orders || orders.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No pending payments right now.</div>';
+    return;
+  }
+
+  wrap.innerHTML = orders.map((o) => `
+    <div class="dense-row">
+      <div class="dr-left">
+        <span class="dr-name">${escapeHtml(o.customer_name)}</span>
+        <span class="dr-amount">₹${o.total_amount}</span>
+        <span class="dr-sub">${escapeHtml(o.customer_address)}</span>
+      </div>
+      <div class="dr-actions">
+        <button type="button" class="btn-approve-upi" data-id="${o.id}" data-method="upi">UPI</button>
+        <button type="button" class="btn-approve-cash" data-id="${o.id}" data-method="cash">Cash</button>
+        <button type="button" class="btn-cancel-order" data-id="${o.id}">&times;</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.btn-approve-upi, .btn-approve-cash').forEach((btn) => {
+    btn.addEventListener('click', () => approveOrder(btn.dataset.id, btn.dataset.method, btn));
+  });
+  wrap.querySelectorAll('.btn-cancel-order').forEach((btn) => {
+    btn.addEventListener('click', () => cancelOrder(btn.dataset.id, btn));
+  });
+}
+
+async function approveOrder(orderId, method, btn) {
+  btn.disabled = true;
+  const { error } = await supabaseClient
+    .from('orders')
+    .update({ status: 'confirmed', payment_method: method, confirmed_at: new Date().toISOString() })
+    .eq('id', orderId);
+
+  if (error) {
+    btn.disabled = false;
+    alert('Could not approve: ' + error.message);
+    return;
+  }
+  refreshAll();
+}
+
+async function cancelOrder(orderId, btn) {
+  if (!confirm('Cancel this pending order?')) return;
+  btn.disabled = true;
+  const { error } = await supabaseClient
+    .from('orders')
+    .update({ status: 'cancelled' })
+    .eq('id', orderId);
+
+  if (error) {
+    btn.disabled = false;
+    alert('Could not cancel: ' + error.message);
+    return;
+  }
+  refreshAll();
+}
+
+// ---------- Confirmed (not yet delivered) ----------
+
+async function loadConfirmed() {
+  const wrap = document.getElementById('confirmedList');
+  const { data: orders, error } = await supabaseClient
+    .from('orders')
+    .select('id, customer_name, customer_phone, customer_address, customer_map_link, total_amount, payment_method, confirmed_at')
+    .eq('supplier_id', supplierId)
+    .eq('status', 'confirmed')
+    .order('confirmed_at', { ascending: true });
+
+  if (error) {
+    wrap.innerHTML = '<div class="empty-state">Could not load: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  if (!orders || orders.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No confirmed orders awaiting delivery.</div>';
+    return;
+  }
+
+  wrap.innerHTML = orders.map((o) => `
+    <div class="order-detail-card">
+      <div class="odc-head">
+        <h4>${escapeHtml(o.customer_name)}</h4>
+        <span class="odc-total">₹${o.total_amount}</span>
+      </div>
+      <p class="odc-address">
+        ${escapeHtml(o.customer_address)}<br>
+        ${escapeHtml(o.customer_phone)}
+        ${o.customer_map_link ? ' &middot; <a href="' + escapeHtml(o.customer_map_link) + '" target="_blank" rel="noopener">Map</a>' : ''}
+        &middot; Paid ${escapeHtml((o.payment_method || '').toUpperCase())}
+      </p>
+      <button type="button" class="btn-mark-delivered" data-id="${o.id}">Mark Delivered</button>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.btn-mark-delivered').forEach((btn) => {
+    btn.addEventListener('click', () => markDelivered(btn.dataset.id, btn));
+  });
+}
+
+async function markDelivered(orderId, btn) {
+  btn.disabled = true;
+  const { error } = await supabaseClient
+    .from('orders')
+    .update({ status: 'delivered', delivered_at: new Date().toISOString() })
+    .eq('id', orderId);
+
+  if (error) {
+    btn.disabled = false;
+    alert('Could not update: ' + error.message);
+    return;
+  }
+  refreshAll();
+}
+
+function refreshAll() {
+  loadPending();
+  loadConfirmed();
+}
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('suppliers')
+    .select('id, business_name, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierId = profile.id;
+  document.getElementById('dashboardTitle').textContent = profile.business_name;
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+
+  refreshAll();
+  refreshTimer = setInterval(refreshAll, 10000);
+})();
+
+window.addEventListener('beforeunload', () => {
+  if (refreshTimer) clearInterval(refreshTimer);
+});
+</script>
+</body>
+</html>

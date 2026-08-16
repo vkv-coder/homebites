@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Supplier Login</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page">
+
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1>HomeBites</h1>
+    <p class="tagline">Home Supplier Ordering &amp; Delivery</p>
+  </div>
+
+  <!-- Supplier login card -->
+  <div class="card" id="loginCard">
+    <h2>Supplier Login</h2>
+    <form id="loginForm">
+      <label for="email">Email</label>
+      <input type="email" id="email" required autocomplete="username" placeholder="you@example.com">
+
+      <label for="password">Password</label>
+      <input type="password" id="password" required autocomplete="current-password" placeholder="Your password">
+
+      <button type="submit" class="btn-primary" id="loginBtn">Log In</button>
+    </form>
+
+    <div class="msg" id="loginMsg"></div>
+
+    <div class="links">
+      <a href="#" id="forgotLink">Forgot Password?</a>
+    </div>
+
+    <hr class="divider">
+
+    <div class="links">
+      New supplier? <a href="signup.html">Sign up</a>
+    </div>
+  </div>
+
+  <!-- Forgot password card (hidden by default) -->
+  <div class="card" id="forgotCard" style="display:none; margin-top:16px;">
+    <h2>Reset Password</h2>
+    <p style="color:var(--muted); font-size:14px; margin-top:0;">Enter your account email and we'll send you a password reset link.</p>
+    <label for="forgotEmail">Email</label>
+    <input type="email" id="forgotEmail" placeholder="you@example.com">
+    <button type="button" class="btn-primary" id="sendResetBtn">Send Reset Link</button>
+    <button type="button" class="btn-outline" id="cancelForgotBtn">Cancel</button>
+    <div class="msg" id="forgotMsg"></div>
+  </div>
+
+  <!-- Set new password card (shown when arriving from the reset email link) -->
+  <div class="card" id="newPasswordCard" style="display:none; margin-top:16px;">
+    <h2>Set a New Password</h2>
+    <label for="newPassword">New Password</label>
+    <input type="password" id="newPassword" placeholder="At least 6 characters" autocomplete="new-password">
+    <button type="button" class="btn-primary" id="saveNewPasswordBtn">Save Password</button>
+    <div class="msg" id="newPasswordMsg"></div>
+  </div>
+
+  <!-- Approval status card (shown after successful login, if not approved) -->
+  <div class="card" id="statusCard" style="display:none; margin-top:16px;">
+    <div class="msg show" id="statusMsg"></div>
+    <button type="button" class="btn-outline" id="logoutFromStatusBtn">Log Out</button>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+const loginCard = document.getElementById('loginCard');
+const forgotCard = document.getElementById('forgotCard');
+const newPasswordCard = document.getElementById('newPasswordCard');
+const statusCard = document.getElementById('statusCard');
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function hideAllCards() {
+  loginCard.style.display = 'none';
+  forgotCard.style.display = 'none';
+  newPasswordCard.style.display = 'none';
+  statusCard.style.display = 'none';
+}
+
+// --- Password recovery link landing (Supabase redirects here with type=recovery in the URL hash) ---
+function isRecoveryLink() {
+  return window.location.hash.includes('type=recovery');
+}
+
+if (isRecoveryLink()) {
+  hideAllCards();
+  newPasswordCard.style.display = 'block';
+}
+
+document.getElementById('saveNewPasswordBtn').addEventListener('click', async () => {
+  const pw = document.getElementById('newPassword').value;
+  const msgEl = document.getElementById('newPasswordMsg');
+  if (!pw || pw.length < 6) {
+    showMsg(msgEl, 'Password must be at least 6 characters.', 'error');
+    return;
+  }
+  const { error } = await supabaseClient.auth.updateUser({ password: pw });
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+  showMsg(msgEl, 'Password updated. You can now log in.', 'success');
+  setTimeout(() => {
+    window.location.href = 'index.html';
+  }, 1500);
+});
+
+// --- Forgot password ---
+document.getElementById('forgotLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  hideAllCards();
+  forgotCard.style.display = 'block';
+  document.getElementById('forgotEmail').value = document.getElementById('email').value || '';
+});
+
+document.getElementById('cancelForgotBtn').addEventListener('click', () => {
+  hideAllCards();
+  loginCard.style.display = 'block';
+});
+
+document.getElementById('sendResetBtn').addEventListener('click', async () => {
+  const email = document.getElementById('forgotEmail').value.trim();
+  const msgEl = document.getElementById('forgotMsg');
+  if (!email) {
+    showMsg(msgEl, 'Please enter your email.', 'error');
+    return;
+  }
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+  showMsg(msgEl, 'If that email has an account, a reset link has been sent.', 'success');
+});
+
+// --- Approval status check ---
+async function checkApprovalAndRoute(userId) {
+  const { data, error } = await supabaseClient
+    .from('suppliers')
+    .select('approval_status')
+    .eq('owner_user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    hideAllCards();
+    statusCard.style.display = 'block';
+    showMsg(document.getElementById('statusMsg'), 'Could not check your account status: ' + error.message, 'error');
+    return;
+  }
+
+  if (!data) {
+    hideAllCards();
+    statusCard.style.display = 'block';
+    showMsg(document.getElementById('statusMsg'), 'No supplier profile found for this account.', 'warn');
+    return;
+  }
+
+  if (data.approval_status === 'approved') {
+    window.location.href = 'dashboard.html';
+  } else if (data.approval_status === 'pending') {
+    hideAllCards();
+    statusCard.style.display = 'block';
+    showMsg(document.getElementById('statusMsg'), 'Your account is awaiting approval. We will notify you once you are approved.', 'warn');
+  } else {
+    hideAllCards();
+    statusCard.style.display = 'block';
+    showMsg(document.getElementById('statusMsg'), 'Your account was not approved. Please contact support at vkvcoder.support@gmail.com.', 'error');
+  }
+}
+
+document.getElementById('logoutFromStatusBtn').addEventListener('click', async () => {
+  await supabaseClient.auth.signOut();
+  hideAllCards();
+  loginCard.style.display = 'block';
+});
+
+// --- Login form ---
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const msgEl = document.getElementById('loginMsg');
+  const btn = document.getElementById('loginBtn');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Logging in...';
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+  btn.disabled = false;
+  btn.textContent = 'Log In';
+
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  msgEl.classList.remove('show');
+  await checkApprovalAndRoute(data.user.id);
+});
+
+// --- On load: if already logged in (and not landing on a recovery link), route immediately ---
+(async () => {
+  if (isRecoveryLink()) return;
+  const { data } = await supabaseClient.auth.getSession();
+  if (data.session && data.session.user) {
+    await checkApprovalAndRoute(data.session.user.id);
+  }
+})();
+</script>
+</body>
+</html>

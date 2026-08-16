@@ -1,8 +1,10 @@
 // Shared Supabase + notification config, loaded by every page before its own script.
 
-// TODO: fill these in once the new Supabase project is created (Project Settings > API).
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+// Reuses the existing "Dhobi-digital" Supabase project (also used by Dasaram Ganthiya) —
+// HomeBites' tables/functions are all hb_-prefixed to stay cleanly separated from Dasaram's
+// ag_-prefixed ones in the same project.
+const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
 
 // TODO: deploy a new Google Apps Script Telegram relay for HomeBites (separate bot from
 // Dasaram's) and paste its /exec URL here. Until then this is intentionally left blank —

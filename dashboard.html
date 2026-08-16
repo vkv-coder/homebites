@@ -86,7 +86,7 @@ function showTab(tab) {
 async function loadPending() {
   const wrap = document.getElementById('pendingList');
   const { data: orders, error } = await supabaseClient
-    .from('orders')
+    .from('hb_orders')
     .select('id, customer_name, customer_phone, customer_address, total_amount, created_at')
     .eq('supplier_id', supplierId)
     .eq('status', 'pending_payment')
@@ -128,7 +128,7 @@ async function loadPending() {
 async function approveOrder(orderId, method, btn) {
   btn.disabled = true;
   const { error } = await supabaseClient
-    .from('orders')
+    .from('hb_orders')
     .update({ status: 'confirmed', payment_method: method, confirmed_at: new Date().toISOString() })
     .eq('id', orderId);
 
@@ -144,7 +144,7 @@ async function cancelOrder(orderId, btn) {
   if (!confirm('Cancel this pending order?')) return;
   btn.disabled = true;
   const { error } = await supabaseClient
-    .from('orders')
+    .from('hb_orders')
     .update({ status: 'cancelled' })
     .eq('id', orderId);
 
@@ -161,7 +161,7 @@ async function cancelOrder(orderId, btn) {
 async function loadConfirmed() {
   const wrap = document.getElementById('confirmedList');
   const { data: orders, error } = await supabaseClient
-    .from('orders')
+    .from('hb_orders')
     .select('id, customer_name, customer_phone, customer_address, customer_map_link, total_amount, payment_method, confirmed_at')
     .eq('supplier_id', supplierId)
     .eq('status', 'confirmed')
@@ -201,7 +201,7 @@ async function loadConfirmed() {
 async function markDelivered(orderId, btn) {
   btn.disabled = true;
   const { error } = await supabaseClient
-    .from('orders')
+    .from('hb_orders')
     .update({ status: 'delivered', delivered_at: new Date().toISOString() })
     .eq('id', orderId);
 
@@ -228,7 +228,7 @@ function refreshAll() {
   }
 
   const { data: profile, error } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .select('id, business_name, approval_status')
     .eq('owner_user_id', user.id)
     .maybeSingle();

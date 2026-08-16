@@ -70,7 +70,7 @@ function formatPrice(price) {
 async function loadMenu() {
   const listEl = document.getElementById('menuList');
   const { data, error } = await supabaseClient
-    .from('menu_items')
+    .from('hb_menu_items')
     .select('id, name, price, unit, sort_order, is_paused')
     .eq('supplier_id', supplierId)
     .eq('is_deleted', false)
@@ -121,7 +121,7 @@ async function onToggleAvailable(e) {
 
   checkbox.disabled = true;
   const { error } = await supabaseClient
-    .from('menu_items')
+    .from('hb_menu_items')
     .update({ is_paused: !isAvailable })
     .eq('id', id);
   checkbox.disabled = false;
@@ -161,7 +161,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
   btn.innerHTML = '<span class="spinner"></span>Adding...';
 
   const { error } = await supabaseClient
-    .from('menu_items')
+    .from('hb_menu_items')
     .insert({
       supplier_id: supplierId,
       name: name,
@@ -194,7 +194,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
   }
 
   const { data: profile, error } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .select('id, approval_status')
     .eq('owner_user_id', user.id)
     .maybeSingle();

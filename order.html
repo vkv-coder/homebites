@@ -202,7 +202,7 @@ document.getElementById('phoneForm').addEventListener('submit', async (e) => {
   customerDraft.phone = phone;
   localStorage.setItem('hb_last_phone', phone);
 
-  const { data } = await supabaseClient.rpc('get_customer_by_phone', { p_phone: phone });
+  const { data } = await supabaseClient.rpc('hb_get_customer_by_phone', { p_phone: phone });
 
   btn.disabled = false;
   btn.textContent = 'Continue';
@@ -246,7 +246,7 @@ document.getElementById('detailsBackBtn').addEventListener('click', () => {
 
 async function loadMenu() {
   const { data, error } = await supabaseClient
-    .from('menu_items')
+    .from('hb_menu_items')
     .select('id, name, price, unit')
     .eq('supplier_id', supplierInfo.id)
     .eq('is_paused', false)
@@ -351,7 +351,7 @@ document.getElementById('placeOrderBtn').addEventListener('click', async () => {
     const total = cartTotal();
 
     const { error: orderError } = await supabaseClient
-      .from('orders')
+      .from('hb_orders')
       .insert({
         id: orderId,
         supplier_id: supplierInfo.id,
@@ -371,11 +371,11 @@ document.getElementById('placeOrderBtn').addEventListener('click', async () => {
       price: i.price,
       qty: i.qty
     }));
-    const { error: itemsError } = await supabaseClient.from('order_items').insert(orderItemsPayload);
+    const { error: itemsError } = await supabaseClient.from('hb_order_items').insert(orderItemsPayload);
     if (itemsError) throw itemsError;
 
     try {
-      await supabaseClient.rpc('upsert_customer', {
+      await supabaseClient.rpc('hb_upsert_customer', {
         p_phone: customerDraft.phone,
         p_name: customerDraft.name,
         p_address: customerDraft.address,
@@ -426,7 +426,7 @@ function showWaitingScreen(orderId, totalAmount, items) {
 function startPolling(orderId) {
   stopPolling();
   pollTimer = setInterval(async () => {
-    const { data, error } = await supabaseClient.rpc('get_order_status', { p_order_id: orderId });
+    const { data, error } = await supabaseClient.rpc('hb_get_order_status', { p_order_id: orderId });
     if (error) return;
     const status = (data && data.length > 0) ? data[0] : null;
     if (!status) return;
@@ -491,7 +491,7 @@ document.getElementById('orderMoreBtn').addEventListener('click', () => {
     return;
   }
 
-  const { data, error } = await supabaseClient.rpc('get_supplier_public', { p_slug: supplierSlug });
+  const { data, error } = await supabaseClient.rpc('hb_get_supplier_public', { p_slug: supplierSlug });
   const supplier = (data && data.length > 0) ? data[0] : null;
 
   if (error || !supplier) {
@@ -513,7 +513,7 @@ document.getElementById('orderMoreBtn').addEventListener('click', () => {
 
   const localOrder = getLocalOrder();
   if (localOrder) {
-    const { data: statusData } = await supabaseClient.rpc('get_order_status', { p_order_id: localOrder.orderId });
+    const { data: statusData } = await supabaseClient.rpc('hb_get_order_status', { p_order_id: localOrder.orderId });
     const status = (statusData && statusData.length > 0) ? statusData[0] : null;
 
     if (status && status.status === 'pending_payment') {

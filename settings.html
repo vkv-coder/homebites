@@ -105,7 +105,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   btn.innerHTML = '<span class="spinner"></span>Saving...';
 
   const { error } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .update({
       business_name: businessName,
       owner_phone: ownerPhone || null,
@@ -138,7 +138,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   }
 
   const { data: profile, error } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .select('id, slug, business_name, owner_phone, upi_vpa, upi_payee_name, is_active, approval_status')
     .eq('owner_user_id', user.id)
     .maybeSingle();

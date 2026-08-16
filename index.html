@@ -161,7 +161,7 @@ document.getElementById('sendResetBtn').addEventListener('click', async () => {
 // --- Approval status check ---
 async function checkApprovalAndRoute(userId) {
   const { data, error } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .select('approval_status')
     .eq('owner_user_id', userId)
     .maybeSingle();

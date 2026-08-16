@@ -120,7 +120,7 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
   const slug = slugify(businessName) + '-' + newUserId.slice(0, 6);
 
   const { error: profileError } = await supabaseClient
-    .from('suppliers')
+    .from('hb_suppliers')
     .insert({
       owner_user_id: newUserId,
       business_name: businessName,

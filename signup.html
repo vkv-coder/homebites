@@ -101,19 +101,61 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
     password: ownerPassword
   });
 
-  if (authError) {
-    btn.disabled = false;
-    btn.textContent = 'Create Account';
-    showMsg(msgEl, authError.message, 'error');
-    return;
-  }
+  let newUserId = authData.user ? authData.user.id : null;
 
-  const newUserId = authData.user ? authData.user.id : null;
+  if (authError) {
+    // HomeBites shares its Supabase project (and so its auth.users table) with other
+    // AnyApps.in apps — an email already registered elsewhere hits this branch. Rather
+    // than failing outright, try signing in with the password just typed: if it matches,
+    // this is the same person linking a HomeBites supplier profile to their existing
+    // account; if not, it genuinely belongs to someone/something else.
+    const alreadyRegistered = /already registered|already exists/i.test(authError.message || '');
+    if (!alreadyRegistered) {
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+      showMsg(msgEl, authError.message, 'error');
+      return;
+    }
+
+    const { data: signInData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email: ownerEmail,
+      password: ownerPassword
+    });
+
+    if (signInError) {
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+      showMsg(msgEl, 'This email is already registered with a different password (possibly for another AnyApps.in app). Please use a different email, or enter the correct password for this email to link a HomeBites account to it.', 'error');
+      return;
+    }
+
+    newUserId = signInData.user.id;
+  }
 
   if (!newUserId) {
     btn.disabled = false;
     btn.textContent = 'Create Account';
     showMsg(msgEl, 'Signup did not return a user. Please try again.', 'error');
+    return;
+  }
+
+  // This account may already have a HomeBites supplier profile (e.g. the sign-in fallback
+  // just above, or a retried submission) — check before inserting to avoid a duplicate.
+  const { data: existingSupplier } = await supabaseClient
+    .from('hb_suppliers')
+    .select('id, approval_status')
+    .eq('owner_user_id', newUserId)
+    .maybeSingle();
+
+  if (existingSupplier) {
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    if (existingSupplier.approval_status === 'approved') {
+      window.location.href = 'dashboard.html';
+    } else {
+      document.getElementById('signupCard').style.display = 'none';
+      document.getElementById('waitingCard').style.display = 'block';
+    }
     return;
   }
 

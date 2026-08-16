@@ -398,13 +398,7 @@ footer.site-footer .powered-by .brand-apps {
 .top-nav-strip {
   margin-top: 2px;
   margin-bottom: 20px;
-  justify-content: space-between;
-}
-
-.top-nav-group {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 18px;
 }
 
 .item-tag-badge {

@@ -89,9 +89,11 @@
 
     <a href="#" class="btn upi-pay-btn" id="upiPayBtn">Pay via UPI</a>
 
-    <div class="qr-wrap">
+    <div class="qr-wrap" id="upiQrWrap">
       <canvas id="upiQrCanvas"></canvas>
     </div>
+
+    <div class="msg" id="upiMissingMsg">This supplier hasn't set up UPI payment details yet. Please contact them directly to arrange payment.</div>
 
     <div class="waiting-spinner"></div>
     <p style="color:var(--muted); font-size:13px;">Waiting for the supplier to confirm your payment...</p>
@@ -408,13 +410,27 @@ function showWaitingScreen(orderId, totalAmount, items) {
   currentOrderId = orderId;
   document.getElementById('waitingAmount').textContent = '₹' + totalAmount;
 
-  const upiLink = buildUpiLink(supplierInfo.upi_vpa, supplierInfo.upi_payee_name, totalAmount, supplierInfo.business_name + ' Order');
-  document.getElementById('upiPayBtn').href = upiLink;
+  const upiBtn = document.getElementById('upiPayBtn');
+  const qrWrap = document.getElementById('upiQrWrap');
+  const missingMsg = document.getElementById('upiMissingMsg');
 
-  const canvas = document.getElementById('upiQrCanvas');
-  QRCode.toCanvas(canvas, upiLink, { width: 200, margin: 1 }, (err) => {
-    if (err) console.warn('QR generation failed:', err);
-  });
+  if (!supplierInfo.upi_vpa) {
+    upiBtn.style.display = 'none';
+    qrWrap.style.display = 'none';
+    missingMsg.classList.add('show', 'msg-warn');
+  } else {
+    upiBtn.style.display = '';
+    qrWrap.style.display = '';
+    missingMsg.classList.remove('show');
+
+    const upiLink = buildUpiLink(supplierInfo.upi_vpa, supplierInfo.upi_payee_name, totalAmount, supplierInfo.business_name + ' Order');
+    upiBtn.href = upiLink;
+
+    const canvas = document.getElementById('upiQrCanvas');
+    QRCode.toCanvas(canvas, upiLink, { width: 200, margin: 1 }, (err) => {
+      if (err) console.warn('QR generation failed:', err);
+    });
+  }
 
   showScreen('waitingScreen');
   startPolling(orderId);

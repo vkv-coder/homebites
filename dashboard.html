@@ -81,6 +81,27 @@ function showTab(tab) {
   });
 }
 
+// ---------- Item details (shared by Pending + Confirmed) ----------
+
+async function loadItemsForOrders(orderIds) {
+  if (orderIds.length === 0) return {};
+  const { data: items } = await supabaseClient
+    .from('hb_order_items')
+    .select('order_id, item_name, qty')
+    .in('order_id', orderIds);
+
+  const byOrder = {};
+  (items || []).forEach((i) => {
+    if (!byOrder[i.order_id]) byOrder[i.order_id] = [];
+    byOrder[i.order_id].push(i);
+  });
+  return byOrder;
+}
+
+function itemsSummary(items) {
+  return (items || []).map((i) => i.item_name + ' x' + i.qty).join(', ');
+}
+
 // ---------- Pending ----------
 
 async function loadPending() {
@@ -102,11 +123,14 @@ async function loadPending() {
     return;
   }
 
+  const itemsByOrder = await loadItemsForOrders(orders.map((o) => o.id));
+
   wrap.innerHTML = orders.map((o) => `
     <div class="dense-row">
       <div class="dr-left">
         <span class="dr-name">${escapeHtml(o.customer_name)}</span>
         <span class="dr-amount">₹${o.total_amount}</span>
+        <span class="dr-sub">${escapeHtml(itemsSummary(itemsByOrder[o.id]))}</span>
         <span class="dr-sub">${escapeHtml(o.customer_address)}</span>
       </div>
       <div class="dr-actions">
@@ -177,6 +201,8 @@ async function loadConfirmed() {
     return;
   }
 
+  const itemsByOrder = await loadItemsForOrders(orders.map((o) => o.id));
+
   wrap.innerHTML = orders.map((o) => `
     <div class="order-detail-card">
       <div class="odc-head">
@@ -184,6 +210,7 @@ async function loadConfirmed() {
         <span class="odc-total">₹${o.total_amount}</span>
       </div>
       <p class="odc-address">
+        <strong>${escapeHtml(itemsSummary(itemsByOrder[o.id]))}</strong><br>
         ${escapeHtml(o.customer_address)}<br>
         ${escapeHtml(o.customer_phone)}
         ${o.customer_map_link ? ' &middot; <a href="' + escapeHtml(o.customer_map_link) + '" target="_blank" rel="noopener">Map</a>' : ''}

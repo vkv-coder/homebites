@@ -392,7 +392,73 @@ footer.site-footer .powered-by .brand-apps {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 22px;
+}
+
+.top-nav-strip {
+  margin-top: 2px;
+}
+
+.item-tag-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--success-bg);
+  color: var(--success);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.row-actions button {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.btn-edit-item { background: var(--brand-light); color: var(--brand-dark); }
+.btn-delete-item { background: var(--danger-bg); color: var(--danger); }
+
+.edit-item-form {
+  width: 100%;
+}
+
+.edit-item-form label {
+  font-size: 12.5px;
+  margin: 10px 0 4px;
+}
+
+.edit-item-form label:first-of-type {
+  margin-top: 0;
+}
+
+.edit-item-form input {
+  padding: 10px;
+  font-size: 14px;
+}
+
+.edit-item-form .edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.edit-item-form .edit-actions button {
+  width: auto;
+  min-height: 38px;
+  padding: 8px 16px;
+  font-size: 13px;
+  margin-top: 0;
 }
 
 .top-bar h1 {

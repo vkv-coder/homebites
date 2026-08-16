@@ -34,6 +34,9 @@
       <label for="itemUnit">Unit (optional)</label>
       <input type="text" id="itemUnit" placeholder="e.g. per box, per kg, per plate">
 
+      <label for="itemTag">Tag (optional)</label>
+      <input type="text" id="itemTag" placeholder="e.g. Eggless, Veg, Spicy">
+
       <button type="submit" class="btn-primary" id="addItemBtn">Add Item</button>
     </form>
     <div class="msg" id="addItemMsg"></div>
@@ -56,6 +59,8 @@
 registerServiceWorker();
 
 let supplierId = null;
+let menuItemsCache = [];
+let editingId = null;
 
 function showMsg(el, text, type) {
   el.textContent = text;
@@ -67,11 +72,21 @@ function formatPrice(price) {
   return '₹' + (Number.isInteger(n) ? n : n.toFixed(2));
 }
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
 async function loadMenu() {
   const listEl = document.getElementById('menuList');
   const { data, error } = await supabaseClient
     .from('hb_menu_items')
-    .select('id, name, price, unit, sort_order, is_paused')
+    .select('id, name, price, unit, tag, sort_order, is_paused')
     .eq('supplier_id', supplierId)
     .eq('is_deleted', false)
     .order('sort_order', { ascending: true });
@@ -81,36 +96,77 @@ async function loadMenu() {
     return;
   }
 
-  if (!data || data.length === 0) {
+  menuItemsCache = data || [];
+  editingId = null;
+  renderList();
+}
+
+function renderList() {
+  const listEl = document.getElementById('menuList');
+
+  if (menuItemsCache.length === 0) {
     listEl.innerHTML = '<div class="empty-state">No menu items yet — add your first one below.</div>';
     return;
   }
 
-  listEl.innerHTML = data.map((row) => `
-    <div class="staff-row" data-id="${row.id}">
-      <div class="info">
-        <h4>${escapeHtml(row.name)}</h4>
-        <p><strong>${formatPrice(row.price)}</strong>${row.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(row.unit) + ')</span>' : ''}</p>
+  listEl.innerHTML = menuItemsCache.map((row) => {
+    if (editingId === row.id) {
+      return `
+        <div class="staff-row" data-id="${row.id}">
+          <div class="edit-item-form">
+            <label>Item Name</label>
+            <input type="text" class="edit-name" value="${escapeAttr(row.name)}">
+            <label>Price (&#8377;)</label>
+            <input type="text" class="edit-price" inputmode="decimal" value="${escapeAttr(String(row.price))}">
+            <label>Unit</label>
+            <input type="text" class="edit-unit" value="${escapeAttr(row.unit || '')}" placeholder="e.g. per box">
+            <label>Tag</label>
+            <input type="text" class="edit-tag" value="${escapeAttr(row.tag || '')}" placeholder="e.g. Eggless, Veg, Spicy">
+            <div class="msg edit-msg"></div>
+            <div class="edit-actions">
+              <button type="button" class="btn-primary save-edit-btn" data-id="${row.id}">Save</button>
+              <button type="button" class="btn-outline cancel-edit-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="staff-row" data-id="${row.id}">
+        <div class="info">
+          <h4>${escapeHtml(row.name)}${row.tag ? ' <span class="item-tag-badge">' + escapeHtml(row.tag) + '</span>' : ''}</h4>
+          <p><strong>${formatPrice(row.price)}</strong>${row.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(row.unit) + ')</span>' : ''}</p>
+          <div class="row-actions">
+            <button type="button" class="btn-edit-item" data-id="${row.id}">Edit</button>
+            <button type="button" class="btn-delete-item" data-id="${row.id}">Delete</button>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <label class="toggle-switch">
+            <input type="checkbox" class="available-toggle" ${row.is_paused ? '' : 'checked'} data-id="${row.id}">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="avail-status-label" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; ${row.is_paused ? 'background:#ffd400; color:#3a2e00;' : 'color:var(--muted);'}">${row.is_paused ? 'Paused' : 'Available'}</span>
+        </div>
       </div>
-      <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-        <label class="toggle-switch">
-          <input type="checkbox" class="available-toggle" ${row.is_paused ? '' : 'checked'} data-id="${row.id}">
-          <span class="toggle-slider"></span>
-        </label>
-        <span class="avail-status-label" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; ${row.is_paused ? 'background:#ffd400; color:#3a2e00;' : 'color:var(--muted);'}">${row.is_paused ? 'Paused' : 'Available'}</span>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   document.querySelectorAll('.available-toggle').forEach((toggle) => {
     toggle.addEventListener('change', onToggleAvailable);
   });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  document.querySelectorAll('.btn-edit-item').forEach((btn) => {
+    btn.addEventListener('click', () => { editingId = btn.dataset.id; renderList(); });
+  });
+  document.querySelectorAll('.cancel-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingId = null; renderList(); });
+  });
+  document.querySelectorAll('.save-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => onSaveEdit(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-delete-item').forEach((btn) => {
+    btn.addEventListener('click', () => onDeleteItem(btn.dataset.id));
+  });
 }
 
 async function onToggleAvailable(e) {
@@ -131,11 +187,65 @@ async function onToggleAvailable(e) {
     alert('Could not update item: ' + error.message);
     return;
   }
+  const row = menuItemsCache.find((m) => m.id === id);
+  if (row) row.is_paused = !isAvailable;
   if (label) {
     label.textContent = isAvailable ? 'Available' : 'Paused';
     label.style.background = isAvailable ? '' : '#ffd400';
     label.style.color = isAvailable ? 'var(--muted)' : '#3a2e00';
   }
+}
+
+async function onSaveEdit(id) {
+  const rowEl = document.querySelector('.staff-row[data-id="' + id + '"]');
+  const name = rowEl.querySelector('.edit-name').value.trim();
+  const priceRaw = rowEl.querySelector('.edit-price').value.trim();
+  const unit = rowEl.querySelector('.edit-unit').value.trim();
+  const tag = rowEl.querySelector('.edit-tag').value.trim();
+  const msgEl = rowEl.querySelector('.edit-msg');
+  const saveBtn = rowEl.querySelector('.save-edit-btn');
+
+  const price = Number(priceRaw);
+  if (!name) {
+    showMsg(msgEl, 'Please enter an item name.', 'error');
+    return;
+  }
+  if (!priceRaw || isNaN(price) || price <= 0) {
+    showMsg(msgEl, 'Please enter a valid price.', 'error');
+    return;
+  }
+
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
+
+  const { error } = await supabaseClient
+    .from('hb_menu_items')
+    .update({ name: name, price: price, unit: unit || null, tag: tag || null })
+    .eq('id', id);
+
+  if (error) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  loadMenu();
+}
+
+async function onDeleteItem(id) {
+  if (!confirm('Delete this item? It will disappear from your menu and this list — past orders that included it are unaffected.')) return;
+
+  const { error } = await supabaseClient
+    .from('hb_menu_items')
+    .update({ is_deleted: true })
+    .eq('id', id);
+
+  if (error) {
+    alert('Could not delete item: ' + error.message);
+    return;
+  }
+  loadMenu();
 }
 
 document.getElementById('addItemForm').addEventListener('submit', async (e) => {
@@ -144,6 +254,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
   const name = document.getElementById('itemName').value.trim();
   const priceRaw = document.getElementById('itemPrice').value.trim();
   const unit = document.getElementById('itemUnit').value.trim();
+  const tag = document.getElementById('itemTag').value.trim();
   const msgEl = document.getElementById('addItemMsg');
   const btn = document.getElementById('addItemBtn');
 
@@ -167,6 +278,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
       name: name,
       price: price,
       unit: unit || null,
+      tag: tag || null,
       is_paused: false,
       is_deleted: false
     });

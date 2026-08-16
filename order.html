@@ -247,7 +247,7 @@ document.getElementById('detailsBackBtn').addEventListener('click', () => {
 async function loadMenu() {
   const { data, error } = await supabaseClient
     .from('hb_menu_items')
-    .select('id, name, price, unit')
+    .select('id, name, price, unit, tag')
     .eq('supplier_id', supplierInfo.id)
     .eq('is_paused', false)
     .eq('is_deleted', false)
@@ -271,7 +271,7 @@ async function loadMenu() {
       ${menuItems.map((item) => `
         <div class="menu-card" data-id="${item.id}">
           <div class="info">
-            <h4>${escapeHtml(item.name)}</h4>
+            <h4>${escapeHtml(item.name)}${item.tag ? ' <span class="item-tag-badge">' + escapeHtml(item.tag) + '</span>' : ''}</h4>
             <p><strong>₹${item.price}</strong>${item.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(item.unit) + ')</span>' : ''}</p>
           </div>
           <div class="qty-stepper">

@@ -51,6 +51,8 @@
 
       <label for="detailsMapLink">Google Maps Link (optional)</label>
       <input type="url" id="detailsMapLink" placeholder="Paste your location link from Google Maps">
+      <button type="button" class="btn-outline" id="useLocationBtn" style="margin-top:10px;">&#128205; Use My Current Location</button>
+      <div class="msg" id="locationMsg"></div>
 
       <button type="submit" class="btn-primary" id="detailsContinueBtn">Continue to Menu</button>
     </form>
@@ -239,6 +241,35 @@ document.getElementById('detailsForm').addEventListener('submit', (e) => {
 
 document.getElementById('detailsBackBtn').addEventListener('click', () => {
   showScreen('phoneScreen');
+});
+
+document.getElementById('useLocationBtn').addEventListener('click', () => {
+  const msgEl = document.getElementById('locationMsg');
+  const btn = document.getElementById('useLocationBtn');
+
+  if (!navigator.geolocation) {
+    showMsg(msgEl, 'Location is not supported on this browser. Please paste a Google Maps link instead.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Getting your location...';
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.disabled = false;
+      btn.innerHTML = '&#128205; Use My Current Location';
+      const link = 'https://maps.google.com/?q=' + pos.coords.latitude + ',' + pos.coords.longitude;
+      document.getElementById('detailsMapLink').value = link;
+      showMsg(msgEl, 'Location captured. You can still edit or replace the link above if needed.', 'success');
+    },
+    (err) => {
+      btn.disabled = false;
+      btn.innerHTML = '&#128205; Use My Current Location';
+      showMsg(msgEl, 'Could not get your location (' + err.message + '). Please paste a Google Maps link instead.', 'error');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
 });
 
 // ---------- Menu + cart ----------

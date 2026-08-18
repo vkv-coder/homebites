@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Phone Order</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1>Record Phone Order</h1>
+    <a href="dashboard.html" class="icon-btn">&larr; Dashboard</a>
+  </div>
+
+  <p style="width:100%; max-width:420px; color:var(--muted); font-size:13px; margin:-12px 0 18px;">
+    For orders you take over the phone. Enter who it's for and how much of each item, then save — it won't ask for payment or delivery details.
+  </p>
+
+  <div class="card" style="margin-bottom:18px;">
+    <label for="callerName">Name (who called / who it's for)</label>
+    <input type="text" id="callerName" placeholder="e.g. Mrs. Sharma">
+  </div>
+
+  <div class="staff-list" id="menuListWrap">
+    <div class="empty-state" id="menuLoadingMsg">Loading menu...</div>
+  </div>
+
+  <div class="msg" id="manualOrderMsg"></div>
+
+  <div class="cart-bar" id="cartBar">
+    <span class="cart-total" id="cartTotal">Add items</span>
+    <button type="button" id="saveOrderBtn" disabled>Save Record</button>
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let supplierId = null;
+let menuItems = [];
+const cart = {}; // menu_item_id -> {id, name, price, unit, qty}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function loadMenu() {
+  const { data, error } = await supabaseClient
+    .from('hb_menu_items')
+    .select('id, name, price, unit, tag')
+    .eq('supplier_id', supplierId)
+    .eq('is_deleted', false)
+    .order('sort_order', { ascending: true });
+
+  const wrap = document.getElementById('menuListWrap');
+
+  if (error) {
+    wrap.innerHTML = '<div class="empty-state">Could not load menu: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  menuItems = data || [];
+  if (menuItems.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No menu items yet. Add some in Menu Manager first.</div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="menu-grid">
+      ${menuItems.map((item) => `
+        <div class="menu-card" data-id="${item.id}">
+          <div class="info">
+            <h4>${escapeHtml(item.name)}${item.tag ? ' <span class="item-tag-badge">' + escapeHtml(item.tag) + '</span>' : ''}</h4>
+            <p><strong>₹${item.price}</strong>${item.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(item.unit) + ')</span>' : ''}</p>
+          </div>
+          <div class="qty-stepper">
+            <button type="button" class="qty-minus" data-id="${item.id}">&minus;</button>
+            <span class="qty-value" id="qty-${item.id}">0</span>
+            <button type="button" class="qty-plus" data-id="${item.id}">+</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('.qty-plus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, 1)));
+  document.querySelectorAll('.qty-minus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, -1)));
+}
+
+function changeQty(itemId, delta) {
+  const item = menuItems.find((m) => m.id === itemId);
+  if (!item) return;
+
+  const current = cart[itemId] ? cart[itemId].qty : 0;
+  const next = Math.max(0, current + delta);
+
+  if (next === 0) {
+    delete cart[itemId];
+  } else {
+    cart[itemId] = { id: item.id, name: item.name, price: item.price, unit: item.unit, qty: next };
+  }
+
+  document.getElementById('qty-' + itemId).textContent = next;
+  renderCartBar();
+}
+
+function cartTotal() {
+  return Object.values(cart).reduce((sum, i) => sum + i.price * i.qty, 0);
+}
+
+function renderCartBar() {
+  const items = Object.values(cart);
+  const totalEl = document.getElementById('cartTotal');
+  const btn = document.getElementById('saveOrderBtn');
+
+  if (items.length === 0) {
+    totalEl.textContent = 'Add items';
+    btn.disabled = true;
+  } else {
+    totalEl.textContent = '₹' + cartTotal() + ' (' + items.length + ' item' + (items.length > 1 ? 's' : '') + ')';
+    btn.disabled = false;
+  }
+}
+
+function resetForm() {
+  document.getElementById('callerName').value = '';
+  for (const key in cart) delete cart[key];
+  document.querySelectorAll('.qty-value').forEach((el) => { el.textContent = '0'; });
+  renderCartBar();
+}
+
+document.getElementById('saveOrderBtn').addEventListener('click', async () => {
+  const msgEl = document.getElementById('manualOrderMsg');
+  const name = document.getElementById('callerName').value.trim();
+  const items = Object.values(cart);
+
+  if (!name) {
+    showMsg(msgEl, 'Please enter a name for this order.', 'error');
+    return;
+  }
+  if (items.length === 0) {
+    showMsg(msgEl, 'Please add at least one item.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('saveOrderBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Saving...';
+
+  const { error } = await supabaseClient.rpc('hb_record_manual_order', {
+    p_supplier_id: supplierId,
+    p_customer_name: name,
+    p_items: items.map((i) => ({ menu_item_id: i.id, qty: i.qty }))
+  });
+
+  btn.disabled = false;
+  btn.textContent = 'Save Record';
+
+  if (error) {
+    showMsg(msgEl, error.message || 'Could not save this order.', 'error');
+    return;
+  }
+
+  showMsg(msgEl, 'Saved for ' + name + ' — ₹' + cartTotal() + '.', 'success');
+  resetForm();
+});
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('hb_suppliers')
+    .select('id, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierId = profile.id;
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+
+  loadMenu();
+})();
+</script>
+</body>
+</html>

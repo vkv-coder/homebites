@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Reports</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1>Reports</h1>
+    <a href="dashboard.html" class="icon-btn">&larr; Dashboard</a>
+  </div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <label for="fromDate">From</label>
+    <input type="date" id="fromDate">
+
+    <label for="toDate">To</label>
+    <input type="date" id="toDate">
+
+    <div class="order-actions" style="margin-top:14px;">
+      <button type="button" class="btn-outline" id="presetToday" style="margin-top:0;">Today</button>
+      <button type="button" class="btn-outline" id="presetWeek" style="margin-top:0;">This Week</button>
+      <button type="button" class="btn-outline" id="presetMonth" style="margin-top:0;">This Month</button>
+    </div>
+
+    <button type="button" class="btn-primary" id="runReportBtn">Run Report</button>
+    <div class="msg" id="reportMsg"></div>
+  </div>
+
+  <div id="reportResults" style="display:none; width:100%; max-width:420px;">
+
+    <div class="top-total-bar" id="reportSummaryBar" style="position:static;"></div>
+
+    <div class="section-title">Item-wise</div>
+    <table class="bill-table" id="itemReportTable">
+      <thead>
+        <tr><th>Item</th><th class="num">Qty</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody id="itemReportBody"></tbody>
+    </table>
+
+    <div class="section-title">Person-wise</div>
+    <table class="bill-table" id="personReportTable">
+      <thead>
+        <tr><th>Name</th><th class="num">Qty</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody id="personReportBody"></tbody>
+    </table>
+
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let supplierId = null;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function toDateInputValue(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function setRange(from, to) {
+  document.getElementById('fromDate').value = toDateInputValue(from);
+  document.getElementById('toDate').value = toDateInputValue(to);
+  runReport();
+}
+
+document.getElementById('presetToday').addEventListener('click', () => {
+  const today = new Date();
+  setRange(today, today);
+});
+
+document.getElementById('presetWeek').addEventListener('click', () => {
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay());
+  setRange(start, today);
+});
+
+document.getElementById('presetMonth').addEventListener('click', () => {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  setRange(start, today);
+});
+
+document.getElementById('runReportBtn').addEventListener('click', runReport);
+
+async function runReport() {
+  const msgEl = document.getElementById('reportMsg');
+  const fromRaw = document.getElementById('fromDate').value;
+  const toRaw = document.getElementById('toDate').value;
+
+  if (!fromRaw || !toRaw) {
+    showMsg(msgEl, 'Please pick both a from and to date.', 'error');
+    return;
+  }
+
+  const fromIso = new Date(fromRaw + 'T00:00:00').toISOString();
+  const toExclusive = new Date(toRaw + 'T00:00:00');
+  toExclusive.setDate(toExclusive.getDate() + 1);
+  const toIso = toExclusive.toISOString();
+
+  const btn = document.getElementById('runReportBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Loading...';
+  msgEl.className = 'msg';
+  document.getElementById('reportResults').style.display = 'none';
+
+  const { data: orders, error: ordersError } = await supabaseClient
+    .from('hb_orders')
+    .select('id, customer_name, total_amount, status')
+    .eq('supplier_id', supplierId)
+    .in('status', ['confirmed', 'delivered'])
+    .gte('created_at', fromIso)
+    .lt('created_at', toIso);
+
+  btn.disabled = false;
+  btn.textContent = 'Run Report';
+
+  if (ordersError) {
+    showMsg(msgEl, 'Could not load report: ' + ordersError.message, 'error');
+    return;
+  }
+
+  if (!orders || orders.length === 0) {
+    showMsg(msgEl, 'No orders in this period.', 'info');
+    return;
+  }
+
+  const orderIds = orders.map((o) => o.id);
+  const { data: items, error: itemsError } = await supabaseClient
+    .from('hb_order_items')
+    .select('order_id, item_name, price, qty')
+    .in('order_id', orderIds);
+
+  if (itemsError) {
+    showMsg(msgEl, 'Could not load report items: ' + itemsError.message, 'error');
+    return;
+  }
+
+  const orderById = {};
+  orders.forEach((o) => { orderById[o.id] = o; });
+
+  const itemMap = {};
+  const personMap = {};
+  let grandTotal = 0;
+
+  (items || []).forEach((it) => {
+    const order = orderById[it.order_id];
+    if (!order) return;
+    const amount = it.price * it.qty;
+    grandTotal += amount;
+
+    if (!itemMap[it.item_name]) itemMap[it.item_name] = { qty: 0, amount: 0 };
+    itemMap[it.item_name].qty += it.qty;
+    itemMap[it.item_name].amount += amount;
+
+    const person = order.customer_name || 'Unknown';
+    if (!personMap[person]) personMap[person] = { qty: 0, amount: 0 };
+    personMap[person].qty += it.qty;
+    personMap[person].amount += amount;
+  });
+
+  const itemRows = Object.entries(itemMap).sort((a, b) => b[1].amount - a[1].amount);
+  const personRows = Object.entries(personMap).sort((a, b) => b[1].amount - a[1].amount);
+
+  document.getElementById('reportSummaryBar').textContent =
+    orders.length + ' order' + (orders.length > 1 ? 's' : '') + ' — Total: ₹' + grandTotal;
+
+  document.getElementById('itemReportBody').innerHTML = itemRows.map(([name, v]) => `
+    <tr>
+      <td>${escapeHtml(name)}</td>
+      <td class="num">${v.qty}</td>
+      <td class="num">₹${v.amount}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('personReportBody').innerHTML = personRows.map(([name, v]) => `
+    <tr>
+      <td>${escapeHtml(name)}</td>
+      <td class="num">${v.qty}</td>
+      <td class="num">₹${v.amount}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('reportResults').style.display = 'block';
+}
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('hb_suppliers')
+    .select('id, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierId = profile.id;
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+
+  const today = new Date();
+  document.getElementById('fromDate').value = toDateInputValue(today);
+  document.getElementById('toDate').value = toDateInputValue(today);
+})();
+</script>
+</body>
+</html>

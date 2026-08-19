@@ -185,7 +185,7 @@ async function checkApprovalAndRoute(userId) {
   } else if (data.approval_status === 'pending') {
     hideAllCards();
     statusCard.style.display = 'block';
-    showMsg(document.getElementById('statusMsg'), 'Your account is awaiting approval. We will notify you once you are approved.', 'warn');
+    showMsg(document.getElementById('statusMsg'), 'Your account is awaiting approval, usually within 24 hours. We will notify you once you are approved.', 'warn');
   } else {
     hideAllCards();
     statusCard.style.display = 'block';

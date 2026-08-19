@@ -6,10 +6,11 @@
 const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
 
-// TODO: deploy a new Google Apps Script Telegram relay for HomeBites (separate bot from
-// Dasaram's) and paste its /exec URL here. Until then this is intentionally left blank —
-// notifyTelegram() below no-ops safely, so signup notifications just won't fire yet.
-const GAS_RELAY_URL = '';
+// Reuses the "Annapurna" Apps Script Telegram relay (originally built for Dasaram Ganthiya,
+// same owner) rather than standing up a separate HomeBites bot — every message already says
+// which app it's from, so a shared alert chat is unambiguous. Fixed 2026-08-19 to return
+// HtmlService instead of ContentService, which was causing every notification to double-send.
+const GAS_RELAY_URL = 'https://script.google.com/macros/s/AKfycbwNAxiSandIkgt4N6Df9eGzsaHsaIQHshvapiLdMpEsdtBX83jjAo5nCLLWMU4OqmMy/exec';
 
 const SUPPORT_EMAIL = 'vkvcoder.support@gmail.com';
 const APP_DISPLAY_NAME = 'HomeBites';

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Admin</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="loginRoot" style="display:none;">
+  <div class="brand-header">
+    <div class="logo-mark">H</div>
+    <h1>HomeBites Admin</h1>
+    <p class="tagline">Platform administration</p>
+  </div>
+  <div class="card">
+    <h2 id="authCardTitle">Admin Login</h2>
+    <form id="authForm">
+      <label for="authEmail">Email</label>
+      <input type="email" id="authEmail" required autocomplete="username">
+
+      <label for="authPassword">Password</label>
+      <input type="password" id="authPassword" required autocomplete="current-password">
+
+      <button type="submit" class="btn-primary" id="authBtn">Log In</button>
+    </form>
+    <div class="msg" id="authMsg"></div>
+    <div class="links">
+      <a href="#" id="toggleAuthMode">Don't have an account? Sign up</a>
+    </div>
+  </div>
+</div>
+
+<div class="page" id="notAuthorizedRoot" style="display:none;">
+  <div class="card center-text">
+    <h2>Not Authorized</h2>
+    <p style="color:var(--muted);">This account isn't set up as a HomeBites admin. Ask support to add your account.</p>
+    <button type="button" class="btn-outline" id="signOutBtn">Log Out</button>
+  </div>
+</div>
+
+<div class="page" id="appRoot" style="display:none;">
+  <div class="top-bar">
+    <h1>Supplier Approvals</h1>
+    <a href="#" id="logoutLink" class="icon-btn">Log Out</a>
+  </div>
+
+  <div id="supplierList"><div class="empty-state">Loading...</div></div>
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let authMode = 'login'; // 'login' | 'signup'
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function showPage(id) {
+  ['loginRoot', 'notAuthorizedRoot', 'appRoot', 'loadingRoot'].forEach((p) => {
+    document.getElementById(p).style.display = p === id ? 'flex' : 'none';
+  });
+}
+
+document.getElementById('toggleAuthMode').addEventListener('click', (e) => {
+  e.preventDefault();
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('authCardTitle').textContent = authMode === 'login' ? 'Admin Login' : 'Admin Sign Up';
+  document.getElementById('authBtn').textContent = authMode === 'login' ? 'Log In' : 'Sign Up';
+  document.getElementById('toggleAuthMode').textContent = authMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in';
+});
+
+document.getElementById('authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const msgEl = document.getElementById('authMsg');
+  const btn = document.getElementById('authBtn');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Please wait...';
+
+  const { error } = authMode === 'login'
+    ? await supabaseClient.auth.signInWithPassword({ email, password })
+    : await supabaseClient.auth.signUp({ email, password });
+
+  btn.disabled = false;
+  btn.textContent = authMode === 'login' ? 'Log In' : 'Sign Up';
+
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  if (authMode === 'signup') {
+    showMsg(msgEl, 'Account created. Ask support to grant admin access to this email, then log in.', 'success');
+    authMode = 'login';
+    document.getElementById('authCardTitle').textContent = 'Admin Login';
+    document.getElementById('authBtn').textContent = 'Log In';
+    return;
+  }
+
+  checkAdminAndLoad();
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  await supabaseClient.auth.signOut();
+  window.location.reload();
+});
+
+document.getElementById('logoutLink').addEventListener('click', async (e) => {
+  e.preventDefault();
+  await supabaseClient.auth.signOut();
+  window.location.reload();
+});
+
+function statusBadge(status) {
+  const colors = {
+    pending: 'background:#fff4e6; color:#e8590c;',
+    approved: 'background:var(--success-bg); color:var(--success);',
+    rejected: 'background:var(--danger-bg); color:var(--danger);'
+  };
+  return '<span style="display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; ' +
+    (colors[status] || '') + '">' + escapeHtml(status) + '</span>';
+}
+
+async function loadSuppliers() {
+  const wrap = document.getElementById('supplierList');
+  const { data, error } = await supabaseClient.rpc('hb_admin_list_suppliers');
+
+  if (error) {
+    wrap.innerHTML = '<div class="empty-state">Could not load suppliers: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No suppliers yet.</div>';
+    return;
+  }
+
+  wrap.innerHTML = data.map((s) => `
+    <div class="order-detail-card" data-id="${s.id}">
+      <div class="odc-head">
+        <h4>${escapeHtml(s.business_name)}</h4>
+        ${statusBadge(s.approval_status)}
+      </div>
+      <p class="odc-address">
+        ${escapeHtml(s.owner_email || '')}${s.owner_phone ? ' &middot; ' + escapeHtml(s.owner_phone) : ''}<br>
+        Link: ${escapeHtml(s.slug || '')}
+      </p>
+      ${s.approval_status === 'pending' ? `
+        <div class="order-actions">
+          <button type="button" class="btn-approve-cash approve-btn" data-id="${s.id}">Approve</button>
+          <button type="button" class="btn-cancel-order reject-btn" data-id="${s.id}">Reject</button>
+        </div>
+      ` : ''}
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.approve-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setApproval(btn.dataset.id, 'approved', btn));
+  });
+  wrap.querySelectorAll('.reject-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setApproval(btn.dataset.id, 'rejected', btn));
+  });
+}
+
+async function setApproval(supplierId, status, btn) {
+  btn.disabled = true;
+  const { error } = await supabaseClient.rpc('hb_admin_set_supplier_approval', {
+    p_supplier_id: supplierId,
+    p_status: status
+  });
+
+  if (error) {
+    btn.disabled = false;
+    alert('Could not update: ' + error.message);
+    return;
+  }
+  loadSuppliers();
+}
+
+async function checkAdminAndLoad() {
+  showPage('loadingRoot');
+  const { data: isAdmin, error } = await supabaseClient.rpc('hb_admin_is_admin');
+
+  if (error || !isAdmin) {
+    showPage('notAuthorizedRoot');
+    return;
+  }
+
+  showPage('appRoot');
+  loadSuppliers();
+}
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    showPage('loginRoot');
+    return;
+  }
+
+  checkAdminAndLoad();
+})();
+</script>
+</body>
+</html>

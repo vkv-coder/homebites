@@ -25,6 +25,19 @@
     <p>Share this with customers</p>
   </div>
 
+  <div class="card" style="margin-bottom:18px;">
+    <h2>Business Logo</h2>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <img id="logoPreview" src="" alt="Logo preview" style="display:none; width:72px; height:72px; border-radius:14px; object-fit:cover; border:1px solid var(--border);">
+      <div id="logoPlaceholder" class="logo-mark" style="width:72px; height:72px; font-size:30px; flex-shrink:0;">H</div>
+      <div style="flex:1;">
+        <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp">
+        <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Shown to customers when they open your order link. PNG/JPG/WEBP, under 2MB.</p>
+      </div>
+    </div>
+    <div class="msg" id="logoMsg"></div>
+  </div>
+
   <div class="card">
     <h2>Business Details</h2>
     <form id="settingsForm">
@@ -89,6 +102,65 @@ const RESERVED_SLUGS = [
   'manual-order', 'reports', 'admin',
   'privacy', 'css', 'js', 'icons', 'manifest', 'service-worker', '404'
 ];
+
+function renderLogoPreview() {
+  const img = document.getElementById('logoPreview');
+  const placeholder = document.getElementById('logoPlaceholder');
+  if (supplierRow.logo_url) {
+    img.src = supplierRow.logo_url + '?t=' + Date.now();
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+document.getElementById('logoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const msgEl = document.getElementById('logoMsg');
+  if (!file) return;
+
+  if (file.size > 2 * 1024 * 1024) {
+    showMsg(msgEl, 'Image must be under 2MB.', 'error');
+    e.target.value = '';
+    return;
+  }
+
+  showMsg(msgEl, 'Uploading...', 'info');
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = supplierRow.id + '/logo.' + ext;
+
+  const { error: uploadError } = await supabaseClient.storage
+    .from('hb-logos')
+    .upload(path, file, { upsert: true, contentType: file.type });
+
+  if (uploadError) {
+    showMsg(msgEl, 'Upload failed: ' + uploadError.message, 'error');
+    e.target.value = '';
+    return;
+  }
+
+  const { data: publicUrlData } = supabaseClient.storage.from('hb-logos').getPublicUrl(path);
+  const logoUrl = publicUrlData.publicUrl;
+
+  const { error: updateError } = await supabaseClient
+    .from('hb_suppliers')
+    .update({ logo_url: logoUrl })
+    .eq('id', supplierRow.id);
+
+  e.target.value = '';
+
+  if (updateError) {
+    showMsg(msgEl, 'Uploaded, but could not save: ' + updateError.message, 'error');
+    return;
+  }
+
+  supplierRow.logo_url = logoUrl;
+  renderLogoPreview();
+  showMsg(msgEl, 'Logo updated.', 'success');
+});
 
 function renderShareLink() {
   const link = window.location.origin + '/' + supplierRow.slug;
@@ -168,7 +240,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 
   const { data: profile, error } = await supabaseClient
     .from('hb_suppliers')
-    .select('id, slug, business_name, owner_phone, upi_vpa, upi_payee_name, is_active, approval_status')
+    .select('id, slug, business_name, owner_phone, upi_vpa, upi_payee_name, is_active, approval_status, logo_url')
     .eq('owner_user_id', user.id)
     .maybeSingle();
 
@@ -187,6 +259,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   document.getElementById('isActiveToggle').checked = profile.is_active;
 
   renderShareLink();
+  renderLogoPreview();
 
   document.getElementById('loadingRoot').style.display = 'none';
   document.getElementById('appRoot').style.display = 'flex';

@@ -24,7 +24,7 @@
 
 <div class="page" id="phoneScreen" style="display:none;">
   <div class="brand-header">
-    <div class="logo-mark">H</div>
+    <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="supplierNameHeading">HomeBites</h1>
     <p class="tagline">Order from a home kitchen</p>
   </div>
@@ -63,7 +63,7 @@
 
 <div class="page" id="orderFormScreen" style="display:none;">
   <div class="brand-header">
-    <div class="logo-mark">H</div>
+    <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="orderFormSupplierName">Supplier</h1>
     <p class="tagline" id="orderFormDeliveryLine">Delivering to...</p>
   </div>
@@ -104,7 +104,7 @@
 
 <div class="page" id="billScreen" style="display:none;">
   <div class="brand-header">
-    <div class="logo-mark">H</div>
+    <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="billSupplierName">Supplier</h1>
     <p class="tagline">Order Confirmed</p>
   </div>
@@ -162,6 +162,16 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function applySupplierLogo() {
+  document.querySelectorAll('.supplier-logo-mark').forEach((el) => {
+    if (supplierInfo.logo_url) {
+      el.innerHTML = '<img src="' + escapeHtml(supplierInfo.logo_url) + '" alt="' + escapeHtml(supplierInfo.business_name) + '" style="width:100%; height:100%; object-fit:cover; border-radius:18px;">';
+    } else {
+      el.textContent = 'H';
+    }
+  });
 }
 
 function localOrderKey() {
@@ -552,6 +562,7 @@ document.getElementById('orderMoreBtn').addEventListener('click', () => {
   supplierInfo = supplier;
   document.title = supplier.business_name + ' - Order';
   document.getElementById('supplierNameHeading').textContent = supplier.business_name;
+  applySupplierLogo();
 
   await loadMenu();
 

@@ -30,8 +30,33 @@
     </form>
     <div class="msg" id="authMsg"></div>
     <div class="links">
+      <a href="#" id="forgotLink">Forgot Password?</a>
+    </div>
+    <div class="links">
       <a href="#" id="toggleAuthMode">Don't have an account? Sign up</a>
     </div>
+  </div>
+</div>
+
+<div class="page" id="forgotRoot" style="display:none;">
+  <div class="card">
+    <h2>Reset Password</h2>
+    <p style="color:var(--muted); font-size:14px; margin-top:0;">Enter your account email and we'll send you a password reset link.</p>
+    <label for="forgotEmail">Email</label>
+    <input type="email" id="forgotEmail" placeholder="you@example.com">
+    <button type="button" class="btn-primary" id="sendResetBtn">Send Reset Link</button>
+    <button type="button" class="btn-outline" id="cancelForgotBtn">Cancel</button>
+    <div class="msg" id="forgotMsg"></div>
+  </div>
+</div>
+
+<div class="page" id="newPasswordRoot" style="display:none;">
+  <div class="card">
+    <h2>Set a New Password</h2>
+    <label for="newPassword">New Password</label>
+    <input type="password" id="newPassword" placeholder="At least 6 characters" autocomplete="new-password">
+    <button type="button" class="btn-primary" id="saveNewPasswordBtn">Save Password</button>
+    <div class="msg" id="newPasswordMsg"></div>
   </div>
 </div>
 
@@ -80,10 +105,58 @@ function escapeHtml(str) {
 }
 
 function showPage(id) {
-  ['loginRoot', 'notAuthorizedRoot', 'appRoot', 'loadingRoot'].forEach((p) => {
+  ['loginRoot', 'forgotRoot', 'newPasswordRoot', 'notAuthorizedRoot', 'appRoot', 'loadingRoot'].forEach((p) => {
     document.getElementById(p).style.display = p === id ? 'flex' : 'none';
   });
 }
+
+// --- Forgot / reset password ---
+function isRecoveryLink() {
+  return window.location.hash.includes('type=recovery');
+}
+
+document.getElementById('forgotLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('forgotEmail').value = document.getElementById('authEmail').value || '';
+  showPage('forgotRoot');
+});
+
+document.getElementById('cancelForgotBtn').addEventListener('click', () => {
+  showPage('loginRoot');
+});
+
+document.getElementById('sendResetBtn').addEventListener('click', async () => {
+  const email = document.getElementById('forgotEmail').value.trim();
+  const msgEl = document.getElementById('forgotMsg');
+  if (!email) {
+    showMsg(msgEl, 'Please enter your email.', 'error');
+    return;
+  }
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+  showMsg(msgEl, 'If that email has an account, a reset link has been sent.', 'success');
+});
+
+document.getElementById('saveNewPasswordBtn').addEventListener('click', async () => {
+  const pw = document.getElementById('newPassword').value;
+  const msgEl = document.getElementById('newPasswordMsg');
+  if (!pw || pw.length < 6) {
+    showMsg(msgEl, 'Password must be at least 6 characters.', 'error');
+    return;
+  }
+  const { error } = await supabaseClient.auth.updateUser({ password: pw });
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+  showMsg(msgEl, 'Password updated. Checking admin access...', 'success');
+  setTimeout(checkAdminAndLoad, 1200);
+});
 
 document.getElementById('toggleAuthMode').addEventListener('click', (e) => {
   e.preventDefault();
@@ -217,6 +290,11 @@ async function checkAdminAndLoad() {
 }
 
 (async () => {
+  if (isRecoveryLink()) {
+    showPage('newPasswordRoot');
+    return;
+  }
+
   const { data: sessionData } = await supabaseClient.auth.getSession();
   const user = sessionData.session ? sessionData.session.user : null;
 

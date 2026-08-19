@@ -33,6 +33,22 @@ async function notifyTelegram(message) {
   }
 }
 
+// Fire-and-forget email via the same Apps Script relay (type: "email" branch, added
+// 2026-08-19). Sends as whichever address the relay's Google account resolves to —
+// see notifyTelegram() above for the shared-relay rationale.
+async function notifyEmail(to, subject, body) {
+  if (!GAS_RELAY_URL) return;
+  try {
+    await fetch(GAS_RELAY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ type: 'email', to, subject, body, fromName: APP_DISPLAY_NAME })
+    });
+  } catch (err) {
+    console.error('Email relay notification failed:', err);
+  }
+}
+
 // Builds the plain-text bill used for the customer's self-tap "Get Bill on WhatsApp" link.
 function buildBillText(supplierName, items, totalAmount, paymentMethod) {
   const lines = [];

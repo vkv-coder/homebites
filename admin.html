@@ -220,6 +220,8 @@ function statusBadge(status) {
     (colors[status] || '') + '">' + escapeHtml(status) + '</span>';
 }
 
+let suppliersCache = [];
+
 async function loadSuppliers() {
   const wrap = document.getElementById('supplierList');
   const { data, error } = await supabaseClient.rpc('hb_admin_list_suppliers');
@@ -228,6 +230,8 @@ async function loadSuppliers() {
     wrap.innerHTML = '<div class="empty-state">Could not load suppliers: ' + escapeHtml(error.message) + '</div>';
     return;
   }
+
+  suppliersCache = data || [];
 
   if (!data || data.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No suppliers yet.</div>';
@@ -273,6 +277,22 @@ async function setApproval(supplierId, status, btn) {
     alert('Could not update: ' + error.message);
     return;
   }
+
+  if (status === 'approved') {
+    const supplier = suppliersCache.find((s) => s.id === supplierId);
+    if (supplier && supplier.owner_email) {
+      const loginLink = window.location.origin + '/index.html';
+      notifyEmail(
+        supplier.owner_email,
+        'Your HomeBites application has been approved!',
+        'Hi ' + supplier.business_name + ',\n\n' +
+        'Good news — your HomeBites supplier account has been approved. You can now log in and start taking orders:\n\n' +
+        loginLink + '\n\n' +
+        'Thanks,\nHomeBites'
+      );
+    }
+  }
+
   loadSuppliers();
 }
 

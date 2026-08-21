@@ -220,6 +220,17 @@ function statusBadge(status) {
     (colors[status] || '') + '">' + escapeHtml(status) + '</span>';
 }
 
+function trialLine(trialStartedAt) {
+  if (!trialStartedAt) return '';
+  const trialEnd = new Date(trialStartedAt);
+  trialEnd.setMonth(trialEnd.getMonth() + 1);
+  const daysLeft = Math.ceil((trialEnd - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysLeft <= 0) {
+    return '<br><span style="color:var(--danger); font-weight:700;">Trial ended ' + Math.abs(daysLeft) + ' day' + (Math.abs(daysLeft) !== 1 ? 's' : '') + ' ago</span>';
+  }
+  return '<br><span style="color:var(--muted);">Trial: ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left (started ' + new Date(trialStartedAt).toLocaleDateString() + ')</span>';
+}
+
 let suppliersCache = [];
 
 async function loadSuppliers() {
@@ -247,6 +258,7 @@ async function loadSuppliers() {
       <p class="odc-address">
         ${escapeHtml(s.owner_email || '')}${s.owner_phone ? ' &middot; ' + escapeHtml(s.owner_phone) : ''}<br>
         Link: ${escapeHtml(s.slug || '')}
+        ${trialLine(s.trial_started_at)}
       </p>
       ${s.approval_status === 'pending' ? `
         <div class="order-actions">

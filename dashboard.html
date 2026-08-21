@@ -25,6 +25,8 @@
     <a href="settings.html">Settings</a>
   </div>
 
+  <div class="msg" id="trialMsg" style="width:100%; max-width:420px;"></div>
+
   <div class="tab-strip" id="tabStrip">
     <button type="button" class="active" data-tab="pending">Pending</button>
     <button type="button" data-tab="confirmed">Confirmed</button>
@@ -242,6 +244,24 @@ async function markDelivered(orderId, btn) {
   refreshAll();
 }
 
+function showTrialMessage(trialStartedAt) {
+  const msgEl = document.getElementById('trialMsg');
+  if (!trialStartedAt) return;
+
+  const trialEnd = new Date(trialStartedAt);
+  trialEnd.setMonth(trialEnd.getMonth() + 1);
+  const daysLeft = Math.ceil((trialEnd - new Date()) / (1000 * 60 * 60 * 24));
+  const priceLine = '₹199/month or ₹2000/year — contact vkvcoder.support@gmail.com to continue.';
+
+  if (daysLeft <= 0) {
+    msgEl.textContent = 'Your free trial has ended. ' + priceLine;
+    msgEl.className = 'msg show msg-error';
+  } else if (daysLeft <= 3) {
+    msgEl.textContent = 'Your free trial ends in ' + daysLeft + ' day' + (daysLeft > 1 ? 's' : '') + '. ' + priceLine;
+    msgEl.className = 'msg show msg-warn';
+  }
+}
+
 function refreshAll() {
   loadPending();
   loadConfirmed();
@@ -258,7 +278,7 @@ function refreshAll() {
 
   const { data: profile, error } = await supabaseClient
     .from('hb_suppliers')
-    .select('id, business_name, approval_status')
+    .select('id, business_name, approval_status, trial_started_at')
     .eq('owner_user_id', user.id)
     .maybeSingle();
 
@@ -269,6 +289,7 @@ function refreshAll() {
 
   supplierId = profile.id;
   document.getElementById('dashboardTitle').textContent = profile.business_name;
+  showTrialMessage(profile.trial_started_at);
 
   document.getElementById('loadingRoot').style.display = 'none';
   document.getElementById('appRoot').style.display = 'flex';

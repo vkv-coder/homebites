@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HomeBites - Order Questions</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#d9480f">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div class="page" id="appRoot" style="display:none;">
+
+  <div class="top-bar">
+    <h1>Order Questions</h1>
+    <a href="dashboard.html" class="icon-btn">&larr; Dashboard</a>
+  </div>
+
+  <p style="width:100%; max-width:420px; color:var(--muted); font-size:13px; margin:-10px 0 18px;">
+    Ask customers extra questions at checkout — e.g. "Cutlery needed?" or "Pickup or Delivery time". These appear right before they place an order and show up on your dashboard with each order.
+  </p>
+
+  <div class="staff-list" id="optionsList">
+    <div class="empty-state">Loading...</div>
+  </div>
+
+  <div class="card" id="addOptionCard">
+    <h2>Add a Question</h2>
+    <form id="addOptionForm">
+      <label for="optLabel">Question</label>
+      <input type="text" id="optLabel" required placeholder="e.g. Cutlery needed?">
+
+      <label for="optType">Type</label>
+      <select id="optType">
+        <option value="checkbox">Yes / No</option>
+        <option value="text">Short answer (free text)</option>
+        <option value="select">Multiple choice</option>
+      </select>
+
+      <div id="choicesField" style="display:none;">
+        <label for="optChoices">Choices</label>
+        <input type="text" id="optChoices" placeholder="e.g. Pickup, Delivery">
+        <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Separate choices with a comma.</p>
+      </div>
+
+      <label style="margin-top:20px;">Required</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="optRequired">
+        <span class="toggle-slider"></span>
+      </label>
+      <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">If on, customers must answer this before placing an order.</p>
+
+      <button type="submit" class="btn-primary" id="addOptionBtn">Add Question</button>
+    </form>
+    <div class="msg" id="addOptionMsg"></div>
+  </div>
+
+</div>
+
+<div class="page" id="loadingRoot">
+  <p style="color:var(--muted);">Loading...</p>
+</div>
+
+<footer class="site-footer">
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./js/config.js"></script>
+<script>
+registerServiceWorker();
+
+let supplierId = null;
+let optionsCache = [];
+let editingId = null;
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show msg-' + type;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
+function typeLabel(type) {
+  if (type === 'checkbox') return 'Yes / No';
+  if (type === 'select') return 'Multiple choice';
+  return 'Short answer';
+}
+
+document.getElementById('optType').addEventListener('change', (e) => {
+  document.getElementById('choicesField').style.display = e.target.value === 'select' ? 'block' : 'none';
+});
+
+async function loadOptions() {
+  const listEl = document.getElementById('optionsList');
+  const { data, error } = await supabaseClient
+    .from('hb_order_options')
+    .select('id, label, option_type, choices, is_required, is_active, sort_order')
+    .eq('supplier_id', supplierId)
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    listEl.innerHTML = '<div class="empty-state">Could not load: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  optionsCache = data || [];
+  editingId = null;
+  renderList();
+}
+
+function renderList() {
+  const listEl = document.getElementById('optionsList');
+
+  if (optionsCache.length === 0) {
+    listEl.innerHTML = '<div class="empty-state">No custom questions yet — add one below.</div>';
+    return;
+  }
+
+  listEl.innerHTML = optionsCache.map((row) => {
+    if (editingId === row.id) {
+      return `
+        <div class="staff-row" data-id="${row.id}">
+          <div class="edit-item-form">
+            <label>Question</label>
+            <input type="text" class="edit-label" value="${escapeAttr(row.label)}">
+            ${row.option_type === 'select' ? `
+              <label>Choices</label>
+              <input type="text" class="edit-choices" value="${escapeAttr(row.choices || '')}" placeholder="e.g. Pickup, Delivery">
+            ` : ''}
+            <label>Required</label>
+            <label class="toggle-switch">
+              <input type="checkbox" class="edit-required" ${row.is_required ? 'checked' : ''}>
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="msg edit-msg"></div>
+            <div class="edit-actions">
+              <button type="button" class="btn-primary save-edit-btn" data-id="${row.id}">Save</button>
+              <button type="button" class="btn-outline cancel-edit-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="staff-row" data-id="${row.id}">
+        <div class="info">
+          <h4>${escapeHtml(row.label)}${row.is_required ? ' <span class="item-tag-badge tag-nonveg">Required</span>' : ''}</h4>
+          <p>${typeLabel(row.option_type)}${row.option_type === 'select' && row.choices ? ' — ' + escapeHtml(row.choices) : ''}</p>
+          <div class="row-actions">
+            <button type="button" class="btn-edit-item" data-id="${row.id}">Edit</button>
+            <button type="button" class="btn-delete-item" data-id="${row.id}">Delete</button>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <label class="toggle-switch">
+            <input type="checkbox" class="active-toggle" ${row.is_active ? 'checked' : ''} data-id="${row.id}">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="avail-status-label" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; ${row.is_active ? 'color:var(--muted);' : 'background:#ffd400; color:#3a2e00;'}">${row.is_active ? 'Shown' : 'Hidden'}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.active-toggle').forEach((toggle) => {
+    toggle.addEventListener('change', onToggleActive);
+  });
+  document.querySelectorAll('.btn-edit-item').forEach((btn) => {
+    btn.addEventListener('click', () => { editingId = btn.dataset.id; renderList(); });
+  });
+  document.querySelectorAll('.cancel-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingId = null; renderList(); });
+  });
+  document.querySelectorAll('.save-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => onSaveEdit(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-delete-item').forEach((btn) => {
+    btn.addEventListener('click', () => onDeleteOption(btn.dataset.id));
+  });
+}
+
+async function onToggleActive(e) {
+  const checkbox = e.target;
+  const id = checkbox.dataset.id;
+  const isActive = checkbox.checked;
+  const label = checkbox.closest('div').querySelector('.avail-status-label');
+
+  checkbox.disabled = true;
+  const { error } = await supabaseClient
+    .from('hb_order_options')
+    .update({ is_active: isActive })
+    .eq('id', id);
+  checkbox.disabled = false;
+
+  if (error) {
+    checkbox.checked = !isActive;
+    alert('Could not update: ' + error.message);
+    return;
+  }
+  const row = optionsCache.find((o) => o.id === id);
+  if (row) row.is_active = isActive;
+  if (label) {
+    label.textContent = isActive ? 'Shown' : 'Hidden';
+    label.style.background = isActive ? '' : '#ffd400';
+    label.style.color = isActive ? 'var(--muted)' : '#3a2e00';
+  }
+}
+
+async function onSaveEdit(id) {
+  const rowEl = document.querySelector('.staff-row[data-id="' + id + '"]');
+  const label = rowEl.querySelector('.edit-label').value.trim();
+  const choicesEl = rowEl.querySelector('.edit-choices');
+  const choices = choicesEl ? choicesEl.value.trim() : null;
+  const isRequired = rowEl.querySelector('.edit-required').checked;
+  const msgEl = rowEl.querySelector('.edit-msg');
+  const saveBtn = rowEl.querySelector('.save-edit-btn');
+
+  if (!label) {
+    showMsg(msgEl, 'Please enter a question.', 'error');
+    return;
+  }
+
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
+
+  const update = { label: label, is_required: isRequired };
+  if (choicesEl) update.choices = choices || null;
+
+  const { error } = await supabaseClient
+    .from('hb_order_options')
+    .update(update)
+    .eq('id', id);
+
+  if (error) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  loadOptions();
+}
+
+async function onDeleteOption(id) {
+  if (!confirm('Delete this question? Past orders keep their saved answers — this only removes it from future orders.')) return;
+
+  const { error } = await supabaseClient
+    .from('hb_order_options')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    alert('Could not delete: ' + error.message);
+    return;
+  }
+  loadOptions();
+}
+
+document.getElementById('addOptionForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const label = document.getElementById('optLabel').value.trim();
+  const optionType = document.getElementById('optType').value;
+  const choices = document.getElementById('optChoices').value.trim();
+  const isRequired = document.getElementById('optRequired').checked;
+  const msgEl = document.getElementById('addOptionMsg');
+  const btn = document.getElementById('addOptionBtn');
+
+  if (!label) {
+    showMsg(msgEl, 'Please enter a question.', 'error');
+    return;
+  }
+  if (optionType === 'select' && !choices) {
+    showMsg(msgEl, 'Please enter at least one choice, separated by commas.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Adding...';
+
+  const { error } = await supabaseClient
+    .from('hb_order_options')
+    .insert({
+      supplier_id: supplierId,
+      label: label,
+      option_type: optionType,
+      choices: optionType === 'select' ? choices : null,
+      is_required: isRequired,
+      is_active: true,
+      sort_order: optionsCache.length
+    });
+
+  btn.disabled = false;
+  btn.textContent = 'Add Question';
+
+  if (error) {
+    showMsg(msgEl, error.message, 'error');
+    return;
+  }
+
+  showMsg(msgEl, 'Question added.', 'success');
+  document.getElementById('addOptionForm').reset();
+  document.getElementById('choicesField').style.display = 'none';
+  loadOptions();
+});
+
+(async () => {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const user = sessionData.session ? sessionData.session.user : null;
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  const { data: profile, error } = await supabaseClient
+    .from('hb_suppliers')
+    .select('id, approval_status')
+    .eq('owner_user_id', user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.approval_status !== 'approved') {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  supplierId = profile.id;
+
+  document.getElementById('loadingRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+
+  loadOptions();
+})();
+</script>
+</body>
+</html>

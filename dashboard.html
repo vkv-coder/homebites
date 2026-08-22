@@ -20,6 +20,7 @@
 
   <div class="top-nav-strip">
     <a href="menu-manager.html">Menu</a>
+    <a href="order-options.html">Order Questions</a>
     <a href="manual-order.html">Phone Order</a>
     <a href="reports.html">Reports</a>
     <a href="settings.html">Settings</a>
@@ -106,13 +107,18 @@ function itemsSummary(items) {
   return (items || []).map((i) => i.item_name + ' x' + i.qty).join(', ');
 }
 
+function customAnswersSummary(customAnswers) {
+  if (!customAnswers || customAnswers.length === 0) return '';
+  return customAnswers.map((a) => a.label + ': ' + a.value).join(' · ');
+}
+
 // ---------- Pending ----------
 
 async function loadPending() {
   const wrap = document.getElementById('pendingList');
   const { data: orders, error } = await supabaseClient
     .from('hb_orders')
-    .select('id, customer_name, customer_phone, customer_address, total_amount, created_at')
+    .select('id, customer_name, customer_phone, customer_address, total_amount, created_at, custom_answers')
     .eq('supplier_id', supplierId)
     .eq('status', 'pending_payment')
     .order('created_at', { ascending: true });
@@ -136,6 +142,7 @@ async function loadPending() {
         <span class="dr-amount">₹${o.total_amount}</span>
         <span class="dr-sub">${escapeHtml(itemsSummary(itemsByOrder[o.id]))}</span>
         <span class="dr-sub">${escapeHtml(o.customer_address)}</span>
+        ${o.custom_answers ? '<span class="dr-sub">' + escapeHtml(customAnswersSummary(o.custom_answers)) + '</span>' : ''}
       </div>
       <div class="dr-actions">
         <button type="button" class="btn-approve-upi" data-id="${o.id}" data-method="upi">UPI</button>
@@ -190,7 +197,7 @@ async function loadConfirmed() {
   const wrap = document.getElementById('confirmedList');
   const { data: orders, error } = await supabaseClient
     .from('hb_orders')
-    .select('id, customer_name, customer_phone, customer_address, customer_map_link, total_amount, payment_method, confirmed_at')
+    .select('id, customer_name, customer_phone, customer_address, customer_map_link, total_amount, payment_method, confirmed_at, custom_answers')
     .eq('supplier_id', supplierId)
     .eq('status', 'confirmed')
     .order('confirmed_at', { ascending: true });
@@ -219,6 +226,7 @@ async function loadConfirmed() {
         ${escapeHtml(o.customer_phone)}
         ${o.customer_map_link ? ' &middot; <a href="' + escapeHtml(o.customer_map_link) + '" target="_blank" rel="noopener">Map</a>' : ''}
         &middot; Paid ${escapeHtml((o.payment_method || '').toUpperCase())}
+        ${o.custom_answers ? '<br>' + escapeHtml(customAnswersSummary(o.custom_answers)) : ''}
       </p>
       <button type="button" class="btn-mark-delivered" data-id="${o.id}">Mark Delivered</button>
     </div>

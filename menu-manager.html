@@ -37,6 +37,10 @@
       <label for="itemTag">Tag (optional)</label>
       <input type="text" id="itemTag" placeholder="e.g. Eggless, Veg, Spicy">
 
+      <label for="itemImage">Photo (optional)</label>
+      <input type="file" id="itemImage" accept="image/png,image/jpeg,image/webp">
+      <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Shown to customers on your order page. PNG/JPG/WEBP, under 2MB.</p>
+
       <button type="submit" class="btn-primary" id="addItemBtn">Add Item</button>
     </form>
     <div class="msg" id="addItemMsg"></div>
@@ -86,7 +90,7 @@ async function loadMenu() {
   const listEl = document.getElementById('menuList');
   const { data, error } = await supabaseClient
     .from('hb_menu_items')
-    .select('id, name, price, unit, tag, sort_order, is_paused')
+    .select('id, name, price, unit, tag, sort_order, is_paused, image_url')
     .eq('supplier_id', supplierId)
     .eq('is_deleted', false)
     .order('sort_order', { ascending: true });
@@ -103,6 +107,7 @@ async function loadMenu() {
 
 function renderList() {
   const listEl = document.getElementById('menuList');
+  const imgCacheBust = Date.now();
 
   if (menuItemsCache.length === 0) {
     listEl.innerHTML = '<div class="empty-state">No menu items yet — add your first one below.</div>';
@@ -122,6 +127,9 @@ function renderList() {
             <input type="text" class="edit-unit" value="${escapeAttr(row.unit || '')}" placeholder="e.g. per box">
             <label>Tag</label>
             <input type="text" class="edit-tag" value="${escapeAttr(row.tag || '')}" placeholder="e.g. Eggless, Veg, Spicy">
+            <label>Photo</label>
+            ${row.image_url ? `<img src="${escapeAttr(row.image_url)}?t=${Date.now()}" alt="" style="width:60px; height:60px; border-radius:10px; object-fit:cover; display:block; margin-bottom:8px;">` : ''}
+            <input type="file" class="edit-image" accept="image/png,image/jpeg,image/webp">
             <div class="msg edit-msg"></div>
             <div class="edit-actions">
               <button type="button" class="btn-primary save-edit-btn" data-id="${row.id}">Save</button>
@@ -133,12 +141,15 @@ function renderList() {
     }
     return `
       <div class="staff-row" data-id="${row.id}">
-        <div class="info">
-          <h4>${escapeHtml(row.name)}${row.tag ? ' <span class="item-tag-badge">' + escapeHtml(row.tag) + '</span>' : ''}</h4>
-          <p><strong>${formatPrice(row.price)}</strong>${row.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(row.unit) + ')</span>' : ''}</p>
-          <div class="row-actions">
-            <button type="button" class="btn-edit-item" data-id="${row.id}">Edit</button>
-            <button type="button" class="btn-delete-item" data-id="${row.id}">Delete</button>
+        <div class="staff-row-left">
+          ${row.image_url ? `<img class="row-thumb" src="${escapeAttr(row.image_url)}?t=${imgCacheBust}" alt="">` : `<div class="row-thumb" style="display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--muted); text-align:center;">No photo</div>`}
+          <div class="info">
+            <h4>${escapeHtml(row.name)}${row.tag ? ' <span class="' + tagBadgeClass(row.tag) + '">' + escapeHtml(row.tag) + '</span>' : ''}</h4>
+            <p><strong>${formatPrice(row.price)}</strong>${row.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(row.unit) + ')</span>' : ''}</p>
+            <div class="row-actions">
+              <button type="button" class="btn-edit-item" data-id="${row.id}">Edit</button>
+              <button type="button" class="btn-delete-item" data-id="${row.id}">Delete</button>
+            </div>
           </div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
@@ -196,12 +207,32 @@ async function onToggleAvailable(e) {
   }
 }
 
+async function uploadItemImage(itemId, file) {
+  if (file.size > 2 * 1024 * 1024) {
+    return { error: 'Image must be under 2MB.' };
+  }
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = supplierId + '/' + itemId + '.' + ext;
+
+  const { error: uploadError } = await supabaseClient.storage
+    .from('hb-menu-images')
+    .upload(path, file, { upsert: true, contentType: file.type });
+
+  if (uploadError) {
+    return { error: 'Upload failed: ' + uploadError.message };
+  }
+
+  const { data: publicUrlData } = supabaseClient.storage.from('hb-menu-images').getPublicUrl(path);
+  return { url: publicUrlData.publicUrl };
+}
+
 async function onSaveEdit(id) {
   const rowEl = document.querySelector('.staff-row[data-id="' + id + '"]');
   const name = rowEl.querySelector('.edit-name').value.trim();
   const priceRaw = rowEl.querySelector('.edit-price').value.trim();
   const unit = rowEl.querySelector('.edit-unit').value.trim();
   const tag = rowEl.querySelector('.edit-tag').value.trim();
+  const imageFile = rowEl.querySelector('.edit-image').files[0];
   const msgEl = rowEl.querySelector('.edit-msg');
   const saveBtn = rowEl.querySelector('.save-edit-btn');
 
@@ -218,9 +249,22 @@ async function onSaveEdit(id) {
   saveBtn.disabled = true;
   saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
 
+  const update = { name: name, price: price, unit: unit || null, tag: tag || null };
+
+  if (imageFile) {
+    const result = await uploadItemImage(id, imageFile);
+    if (result.error) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+      showMsg(msgEl, result.error, 'error');
+      return;
+    }
+    update.image_url = result.url;
+  }
+
   const { error } = await supabaseClient
     .from('hb_menu_items')
-    .update({ name: name, price: price, unit: unit || null, tag: tag || null })
+    .update(update)
     .eq('id', id);
 
   if (error) {
@@ -255,6 +299,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
   const priceRaw = document.getElementById('itemPrice').value.trim();
   const unit = document.getElementById('itemUnit').value.trim();
   const tag = document.getElementById('itemTag').value.trim();
+  const imageFile = document.getElementById('itemImage').files[0];
   const msgEl = document.getElementById('addItemMsg');
   const btn = document.getElementById('addItemBtn');
 
@@ -267,11 +312,15 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
     showMsg(msgEl, 'Please enter a valid price.', 'error');
     return;
   }
+  if (imageFile && imageFile.size > 2 * 1024 * 1024) {
+    showMsg(msgEl, 'Image must be under 2MB.', 'error');
+    return;
+  }
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Adding...';
 
-  const { error } = await supabaseClient
+  const { data: inserted, error } = await supabaseClient
     .from('hb_menu_items')
     .insert({
       supplier_id: supplierId,
@@ -281,15 +330,32 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
       tag: tag || null,
       is_paused: false,
       is_deleted: false
-    });
-
-  btn.disabled = false;
-  btn.textContent = 'Add Item';
+    })
+    .select('id')
+    .single();
 
   if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Add Item';
     showMsg(msgEl, error.message, 'error');
     return;
   }
+
+  if (imageFile) {
+    const result = await uploadItemImage(inserted.id, imageFile);
+    if (result.error) {
+      btn.disabled = false;
+      btn.textContent = 'Add Item';
+      showMsg(msgEl, 'Item added, but photo upload failed: ' + result.error, 'error');
+      document.getElementById('addItemForm').reset();
+      loadMenu();
+      return;
+    }
+    await supabaseClient.from('hb_menu_items').update({ image_url: result.url }).eq('id', inserted.id);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Add Item';
 
   showMsg(msgEl, 'Item added.', 'success');
   document.getElementById('addItemForm').reset();

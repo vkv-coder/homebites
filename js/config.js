@@ -89,6 +89,16 @@ function buildUpiLink(vpa, payeeName, amount, note) {
     '&cu=INR';
 }
 
+// Classifies a menu item's free-text tag (e.g. "Veg", "Non-Veg", "Spicy") into a badge
+// color: green-dot for veg, brown-dot for non-veg, plain for anything else. Suppliers type
+// tags freely (no fixed veg/non-veg field), so this is a best-effort text match.
+function tagBadgeClass(tag) {
+  const t = (tag || '').toLowerCase();
+  if (/non[\s-]?veg/.test(t)) return 'item-tag-badge tag-nonveg';
+  if (/\bveg\b/.test(t)) return 'item-tag-badge';
+  return 'item-tag-badge';
+}
+
 // Turns a business name into a URL-safe slug for the shareable order link.
 function slugify(str) {
   return (str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40);

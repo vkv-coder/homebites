@@ -420,15 +420,35 @@ footer.site-footer .powered-by .brand-apps {
 }
 
 .item-tag-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10.5px;
   font-weight: 700;
-  padding: 2px 7px;
+  padding: 2px 7px 2px 6px;
   border-radius: 999px;
   background: var(--success-bg);
   color: var(--success);
   margin-left: 6px;
   vertical-align: middle;
+}
+
+.item-tag-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.item-tag-badge.tag-nonveg {
+  background: #fbe9df;
+  color: #8a3a12;
+}
+
+.item-tag-badge.tag-nonveg::before {
+  background: #8a3a12;
 }
 
 .row-actions {
@@ -513,6 +533,23 @@ footer.site-footer .powered-by .brand-apps {
   justify-content: space-between;
   margin-bottom: 10px;
   box-shadow: var(--shadow);
+}
+
+.staff-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.staff-row-left .row-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--brand-light);
 }
 
 .staff-row .info h4 {
@@ -658,7 +695,56 @@ footer.site-footer .powered-by .brand-apps {
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+}
+
+.menu-card .thumb-wrap {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--brand-light);
+  cursor: zoom-in;
+}
+
+.menu-card .thumb-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.menu-card .thumb-wrap.no-image {
+  height: auto;
+  min-height: 0;
+  display: block;
+  cursor: default;
+  background: none;
+  padding: 2px 0 0;
+}
+
+.menu-card .thumb-wrap .no-photo-label {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: italic;
+}
+
+.menu-card .zoom-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .menu-card .info h4 {
@@ -673,16 +759,90 @@ footer.site-footer .powered-by .brand-apps {
   color: var(--muted);
 }
 
+.menu-card .card-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+.menu-card .card-bottom-row .price-line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .menu-card .qty-stepper {
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .menu-card .qty-stepper button {
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
-  font-size: 16px;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  border-radius: 7px;
+  font-size: 15px;
+}
+
+.menu-card .qty-stepper .qty-value {
+  min-width: 16px;
+  font-size: 13px;
+}
+
+/* Photo lightbox — a modest pop-up, just big enough to see the dish, not a full-screen zoom */
+.lightbox-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 16, 12, 0.72);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 200;
+}
+
+.lightbox-overlay.show { display: flex; }
+
+.lightbox-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 10px;
+  width: 100%;
+  max-width: 260px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.lightbox-overlay img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+}
+
+.lightbox-caption {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
 }
 
 .qty-stepper {
@@ -919,6 +1079,36 @@ footer.site-footer .powered-by .brand-apps {
 .order-detail-card .odc-head .odc-total { font-weight: 700; color: var(--brand-dark); }
 .order-detail-card .odc-address { font-size: 13px; color: var(--muted); margin: 0 0 10px; line-height: 1.5; }
 .order-detail-card .odc-address a { color: var(--brand); }
+
+.option-field {
+  margin-bottom: 16px;
+}
+
+.option-field label {
+  margin: 0 0 6px;
+}
+
+.option-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.option-checkbox-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.option-checkbox-row span {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
 
 .share-link-box {
   width: 100%;

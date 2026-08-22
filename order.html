@@ -84,6 +84,18 @@
   </div>
 </div>
 
+<div class="page" id="optionsScreen" style="display:none;">
+  <div class="card">
+    <h2>A Few More Details</h2>
+    <form id="optionsForm">
+      <div id="optionsFields"></div>
+      <button type="submit" class="btn-primary" id="optionsContinueBtn">Continue</button>
+    </form>
+    <div class="msg" id="optionsMsg"></div>
+    <button type="button" class="btn-outline" id="optionsBackBtn">&larr; Back to Menu</button>
+  </div>
+</div>
+
 <div class="page" id="waitingScreen" style="display:none;">
   <div class="card center-text">
     <h2>Almost There</h2>
@@ -131,6 +143,14 @@
   <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
 </footer>
 
+<div class="lightbox-overlay" id="itemLightbox">
+  <button type="button" class="lightbox-close" id="lightboxCloseBtn">&times;</button>
+  <div class="lightbox-box">
+    <img id="lightboxImg" src="" alt="">
+    <div class="lightbox-caption" id="lightboxCaption"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
 <script src="./js/config.js"></script>
@@ -142,13 +162,14 @@ const supplierSlug = params.get('supplier');
 
 let supplierInfo = null;
 let menuItems = [];
+let orderOptions = [];
 const cart = {}; // menu_item_id -> {id, name, price, unit, qty}
 let pollTimer = null;
 let customerDraft = { phone: '', name: '', address: '', map_link: '' };
 let currentOrderId = null;
 
 function showScreen(id) {
-  ['loadingScreen', 'errorScreen', 'phoneScreen', 'detailsScreen', 'orderFormScreen', 'waitingScreen', 'billScreen'].forEach((s) => {
+  ['loadingScreen', 'errorScreen', 'phoneScreen', 'detailsScreen', 'orderFormScreen', 'optionsScreen', 'waitingScreen', 'billScreen'].forEach((s) => {
     document.getElementById(s).style.display = s === id ? 'flex' : 'none';
   });
 }
@@ -287,7 +308,7 @@ document.getElementById('useLocationBtn').addEventListener('click', () => {
 async function loadMenu() {
   const { data, error } = await supabaseClient
     .from('hb_menu_items')
-    .select('id, name, price, unit, tag')
+    .select('id, name, price, unit, tag, image_url')
     .eq('supplier_id', supplierInfo.id)
     .eq('is_paused', false)
     .eq('is_deleted', false)
@@ -308,16 +329,24 @@ async function loadMenu() {
 
   wrap.innerHTML = `
     <div class="menu-grid">
-      ${menuItems.map((item) => `
+      ${menuItems.map((item, idx) => `
         <div class="menu-card" data-id="${item.id}">
+          ${item.image_url
+            ? `<div class="thumb-wrap" data-idx="${idx}">
+                 <img src="${escapeHtml(item.image_url)}" alt="${escapeAttr(item.name)}">
+                 <span class="zoom-badge">+</span>
+               </div>`
+            : `<div class="thumb-wrap no-image"><span class="no-photo-label">No photo added</span></div>`}
           <div class="info">
-            <h4>${escapeHtml(item.name)}${item.tag ? ' <span class="item-tag-badge">' + escapeHtml(item.tag) + '</span>' : ''}</h4>
-            <p><strong>₹${item.price}</strong>${item.unit ? ' <span style="color:var(--muted); margin-left:6px;">(' + escapeHtml(item.unit) + ')</span>' : ''}</p>
+            <h4>${escapeHtml(item.name)}${item.tag ? ' <span class="' + tagBadgeClass(item.tag) + '">' + escapeHtml(item.tag) + '</span>' : ''}</h4>
           </div>
-          <div class="qty-stepper">
-            <button type="button" class="qty-minus" data-id="${item.id}">&minus;</button>
-            <span class="qty-value" id="qty-${item.id}">0</span>
-            <button type="button" class="qty-plus" data-id="${item.id}">+</button>
+          <div class="card-bottom-row">
+            <p class="price-line"><strong style="color:var(--ink);">₹${item.price}</strong>${item.unit ? ' (' + escapeHtml(item.unit) + ')' : ''}</p>
+            <div class="qty-stepper">
+              <button type="button" class="qty-minus" data-id="${item.id}">&minus;</button>
+              <span class="qty-value" id="qty-${item.id}">0</span>
+              <button type="button" class="qty-plus" data-id="${item.id}">+</button>
+            </div>
           </div>
         </div>
       `).join('')}
@@ -326,6 +355,88 @@ async function loadMenu() {
 
   document.querySelectorAll('.qty-plus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, 1)));
   document.querySelectorAll('.qty-minus').forEach((btn) => btn.addEventListener('click', () => changeQty(btn.dataset.id, -1)));
+  document.querySelectorAll('.thumb-wrap[data-idx]').forEach((el) => {
+    el.addEventListener('click', () => openLightbox(menuItems[Number(el.dataset.idx)]));
+  });
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
+function openLightbox(item) {
+  document.getElementById('lightboxImg').src = item.image_url;
+  document.getElementById('lightboxCaption').textContent = item.name;
+  document.getElementById('itemLightbox').classList.add('show');
+}
+
+function closeLightbox() {
+  document.getElementById('itemLightbox').classList.remove('show');
+}
+
+document.getElementById('lightboxCloseBtn').addEventListener('click', closeLightbox);
+document.getElementById('itemLightbox').addEventListener('click', (e) => {
+  if (e.target.id === 'itemLightbox') closeLightbox();
+});
+
+// ---------- Custom order options (supplier-defined questions, e.g. cutlery, pickup time) ----------
+
+async function loadOrderOptions() {
+  const { data, error } = await supabaseClient
+    .from('hb_order_options')
+    .select('id, label, option_type, choices, is_required, sort_order')
+    .eq('supplier_id', supplierInfo.id)
+    .order('sort_order', { ascending: true });
+
+  orderOptions = error ? [] : (data || []);
+}
+
+function renderOptionsForm() {
+  const wrap = document.getElementById('optionsFields');
+  wrap.innerHTML = orderOptions.map((opt) => {
+    if (opt.option_type === 'checkbox') {
+      return `
+        <div class="option-field">
+          <label class="option-checkbox-row">
+            <input type="checkbox" data-opt-id="${opt.id}" data-opt-type="checkbox">
+            <span>${escapeHtml(opt.label)}${opt.is_required ? ' *' : ''}</span>
+          </label>
+        </div>
+      `;
+    }
+    if (opt.option_type === 'select') {
+      const choices = (opt.choices || '').split(',').map((c) => c.trim()).filter(Boolean);
+      return `
+        <div class="option-field">
+          <label>${escapeHtml(opt.label)}${opt.is_required ? ' *' : ''}</label>
+          <select data-opt-id="${opt.id}" data-opt-type="select">
+            <option value="">Select...</option>
+            ${choices.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('')}
+          </select>
+        </div>
+      `;
+    }
+    return `
+      <div class="option-field">
+        <label>${escapeHtml(opt.label)}${opt.is_required ? ' *' : ''}</label>
+        <input type="text" data-opt-id="${opt.id}" data-opt-type="text">
+      </div>
+    `;
+  }).join('');
+}
+
+function collectOptionAnswers() {
+  const answers = [];
+  for (const opt of orderOptions) {
+    const el = document.querySelector('[data-opt-id="' + opt.id + '"]');
+    let value = opt.option_type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim();
+    if (opt.is_required && opt.option_type !== 'checkbox' && !value) {
+      return { error: 'Please answer: ' + opt.label };
+    }
+    if (opt.option_type === 'checkbox' && !opt.is_required && !el.checked) continue;
+    answers.push({ label: opt.label, value: value });
+  }
+  return { answers: answers };
 }
 
 function changeQty(itemId, delta) {
@@ -373,7 +484,7 @@ function showOrderForm() {
   showScreen('orderFormScreen');
 }
 
-document.getElementById('placeOrderBtn').addEventListener('click', async () => {
+document.getElementById('placeOrderBtn').addEventListener('click', () => {
   const msgEl = document.getElementById('orderFormMsg');
   const items = Object.values(cart);
 
@@ -382,7 +493,38 @@ document.getElementById('placeOrderBtn').addEventListener('click', async () => {
     return;
   }
 
-  const btn = document.getElementById('placeOrderBtn');
+  if (orderOptions.length > 0) {
+    renderOptionsForm();
+    document.getElementById('optionsMsg').classList.remove('show');
+    showScreen('optionsScreen');
+    return;
+  }
+
+  submitOrder([]);
+});
+
+document.getElementById('optionsBackBtn').addEventListener('click', () => {
+  showScreen('orderFormScreen');
+});
+
+document.getElementById('optionsForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const msgEl = document.getElementById('optionsMsg');
+  const result = collectOptionAnswers();
+  if (result.error) {
+    showMsg(msgEl, result.error, 'error');
+    return;
+  }
+  submitOrder(result.answers);
+});
+
+async function submitOrder(customAnswers) {
+  const items = Object.values(cart);
+  const msgEl = document.getElementById(orderOptions.length > 0 ? 'optionsMsg' : 'orderFormMsg');
+  const btn = orderOptions.length > 0
+    ? document.getElementById('optionsContinueBtn')
+    : document.getElementById('placeOrderBtn');
+
   btn.disabled = true;
   btn.textContent = 'Placing order...';
 
@@ -400,7 +542,8 @@ document.getElementById('placeOrderBtn').addEventListener('click', async () => {
         customer_address: customerDraft.address,
         customer_map_link: customerDraft.map_link || null,
         status: 'pending_payment',
-        total_amount: total
+        total_amount: total,
+        custom_answers: customAnswers && customAnswers.length > 0 ? customAnswers : null
       });
     if (orderError) throw orderError;
 
@@ -439,11 +582,10 @@ document.getElementById('placeOrderBtn').addEventListener('click', async () => {
     showWaitingScreen(orderId, total, items);
   } catch (err) {
     showMsg(msgEl, err.message || 'Something went wrong placing your order.', 'error');
-  } finally {
     btn.disabled = false;
-    btn.textContent = 'Place Order';
+    btn.textContent = orderOptions.length > 0 ? 'Continue' : 'Place Order';
   }
-});
+}
 
 // ---------- Waiting screen (pending payment) ----------
 
@@ -565,6 +707,7 @@ document.getElementById('orderMoreBtn').addEventListener('click', () => {
   applySupplierLogo();
 
   await loadMenu();
+  await loadOrderOptions();
 
   const localOrder = getLocalOrder();
   if (localOrder) {

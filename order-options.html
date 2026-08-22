@@ -41,8 +41,14 @@
 
       <div id="choicesField" style="display:none;">
         <label for="optChoices">Choices</label>
-        <input type="text" id="optChoices" placeholder="e.g. Pickup, Delivery">
-        <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Separate choices with a comma.</p>
+        <input type="text" id="optChoices" placeholder="e.g. Pickup, Delivery|20">
+        <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">Separate choices with a comma. To charge extra for a choice, add <strong>|price</strong> after it — e.g. "Delivery|20" adds &#8377;20 when chosen. Leave plain for free choices.</p>
+      </div>
+
+      <div id="extraPriceField" style="display:none;">
+        <label for="optExtraPrice">Extra Price (optional)</label>
+        <input type="text" id="optExtraPrice" inputmode="decimal" placeholder="e.g. 5">
+        <p style="color:var(--muted); font-size:12.5px; margin:6px 0 0;">If set, this amount is added to the order total when the customer checks this box. Leave blank for a free/informational question.</p>
       </div>
 
       <label style="margin-top:20px;">Required</label>
@@ -98,15 +104,28 @@ function typeLabel(type) {
   return 'Short answer';
 }
 
+function optionPriceSummary(row) {
+  if (row.option_type === 'checkbox') {
+    return row.extra_price ? ' — +₹' + row.extra_price + ' if checked' : '';
+  }
+  if (row.option_type === 'select' && row.choices) {
+    const choices = parseOptionChoices(row.choices);
+    return ' — ' + choices.map((c) => c.label + (c.price > 0 ? ' (+₹' + c.price + ')' : '')).join(', ');
+  }
+  return '';
+}
+
 document.getElementById('optType').addEventListener('change', (e) => {
   document.getElementById('choicesField').style.display = e.target.value === 'select' ? 'block' : 'none';
+  document.getElementById('extraPriceField').style.display = e.target.value === 'checkbox' ? 'block' : 'none';
 });
+document.getElementById('extraPriceField').style.display = 'block';
 
 async function loadOptions() {
   const listEl = document.getElementById('optionsList');
   const { data, error } = await supabaseClient
     .from('hb_order_options')
-    .select('id, label, option_type, choices, is_required, is_active, sort_order')
+    .select('id, label, option_type, choices, extra_price, is_required, is_active, sort_order')
     .eq('supplier_id', supplierId)
     .order('sort_order', { ascending: true });
 
@@ -137,7 +156,11 @@ function renderList() {
             <input type="text" class="edit-label" value="${escapeAttr(row.label)}">
             ${row.option_type === 'select' ? `
               <label>Choices</label>
-              <input type="text" class="edit-choices" value="${escapeAttr(row.choices || '')}" placeholder="e.g. Pickup, Delivery">
+              <input type="text" class="edit-choices" value="${escapeAttr(row.choices || '')}" placeholder="e.g. Pickup, Delivery|20">
+            ` : ''}
+            ${row.option_type === 'checkbox' ? `
+              <label>Extra Price (optional)</label>
+              <input type="text" class="edit-extra-price" inputmode="decimal" value="${row.extra_price != null ? escapeAttr(String(row.extra_price)) : ''}" placeholder="e.g. 5">
             ` : ''}
             <label>Required</label>
             <label class="toggle-switch">
@@ -157,7 +180,7 @@ function renderList() {
       <div class="staff-row" data-id="${row.id}">
         <div class="info">
           <h4>${escapeHtml(row.label)}${row.is_required ? ' <span class="item-tag-badge tag-nonveg">Required</span>' : ''}</h4>
-          <p>${typeLabel(row.option_type)}${row.option_type === 'select' && row.choices ? ' — ' + escapeHtml(row.choices) : ''}</p>
+          <p>${typeLabel(row.option_type)}${optionPriceSummary(row)}</p>
           <div class="row-actions">
             <button type="button" class="btn-edit-item" data-id="${row.id}">Edit</button>
             <button type="button" class="btn-delete-item" data-id="${row.id}">Delete</button>
@@ -223,6 +246,7 @@ async function onSaveEdit(id) {
   const label = rowEl.querySelector('.edit-label').value.trim();
   const choicesEl = rowEl.querySelector('.edit-choices');
   const choices = choicesEl ? choicesEl.value.trim() : null;
+  const extraPriceEl = rowEl.querySelector('.edit-extra-price');
   const isRequired = rowEl.querySelector('.edit-required').checked;
   const msgEl = rowEl.querySelector('.edit-msg');
   const saveBtn = rowEl.querySelector('.save-edit-btn');
@@ -232,11 +256,21 @@ async function onSaveEdit(id) {
     return;
   }
 
+  let extraPrice = null;
+  if (extraPriceEl && extraPriceEl.value.trim()) {
+    extraPrice = Number(extraPriceEl.value.trim());
+    if (isNaN(extraPrice) || extraPrice < 0) {
+      showMsg(msgEl, 'Please enter a valid extra price, or leave it blank.', 'error');
+      return;
+    }
+  }
+
   saveBtn.disabled = true;
   saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
 
   const update = { label: label, is_required: isRequired };
   if (choicesEl) update.choices = choices || null;
+  if (extraPriceEl) update.extra_price = extraPrice;
 
   const { error } = await supabaseClient
     .from('hb_order_options')
@@ -274,6 +308,7 @@ document.getElementById('addOptionForm').addEventListener('submit', async (e) =>
   const label = document.getElementById('optLabel').value.trim();
   const optionType = document.getElementById('optType').value;
   const choices = document.getElementById('optChoices').value.trim();
+  const extraPriceRaw = document.getElementById('optExtraPrice').value.trim();
   const isRequired = document.getElementById('optRequired').checked;
   const msgEl = document.getElementById('addOptionMsg');
   const btn = document.getElementById('addOptionBtn');
@@ -287,6 +322,15 @@ document.getElementById('addOptionForm').addEventListener('submit', async (e) =>
     return;
   }
 
+  let extraPrice = null;
+  if (optionType === 'checkbox' && extraPriceRaw) {
+    extraPrice = Number(extraPriceRaw);
+    if (isNaN(extraPrice) || extraPrice < 0) {
+      showMsg(msgEl, 'Please enter a valid extra price, or leave it blank.', 'error');
+      return;
+    }
+  }
+
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Adding...';
 
@@ -297,6 +341,7 @@ document.getElementById('addOptionForm').addEventListener('submit', async (e) =>
       label: label,
       option_type: optionType,
       choices: optionType === 'select' ? choices : null,
+      extra_price: extraPrice,
       is_required: isRequired,
       is_active: true,
       sort_order: optionsCache.length
@@ -313,6 +358,7 @@ document.getElementById('addOptionForm').addEventListener('submit', async (e) =>
   showMsg(msgEl, 'Question added.', 'success');
   document.getElementById('addOptionForm').reset();
   document.getElementById('choicesField').style.display = 'none';
+  document.getElementById('extraPriceField').style.display = 'block';
   loadOptions();
 });
 

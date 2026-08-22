@@ -308,7 +308,7 @@ document.getElementById('useLocationBtn').addEventListener('click', () => {
 async function loadMenu() {
   const { data, error } = await supabaseClient
     .from('hb_menu_items')
-    .select('id, name, price, unit, tag, image_url')
+    .select('id, name, price, unit, tag, image_url, lead_time_note')
     .eq('supplier_id', supplierInfo.id)
     .eq('is_paused', false)
     .eq('is_deleted', false)
@@ -339,6 +339,7 @@ async function loadMenu() {
             : `<div class="thumb-wrap no-image"><span class="no-photo-label">No photo added</span></div>`}
           <div class="info">
             <h4>${escapeHtml(item.name)}${item.tag ? ' <span class="' + tagBadgeClass(item.tag) + '">' + escapeHtml(item.tag) + '</span>' : ''}</h4>
+            ${item.lead_time_note ? '<p class="lead-time-note">&#9200; ' + escapeHtml(item.lead_time_note) + '</p>' : ''}
           </div>
           <div class="card-bottom-row">
             <p class="price-line"><strong style="color:var(--ink);">₹${item.price}</strong>${item.unit ? ' (' + escapeHtml(item.unit) + ')' : ''}</p>
@@ -384,7 +385,7 @@ document.getElementById('itemLightbox').addEventListener('click', (e) => {
 async function loadOrderOptions() {
   const { data, error } = await supabaseClient
     .from('hb_order_options')
-    .select('id, label, option_type, choices, is_required, sort_order')
+    .select('id, label, option_type, choices, extra_price, is_required, sort_order')
     .eq('supplier_id', supplierInfo.id)
     .order('sort_order', { ascending: true });
 
@@ -399,19 +400,19 @@ function renderOptionsForm() {
         <div class="option-field">
           <label class="option-checkbox-row">
             <input type="checkbox" data-opt-id="${opt.id}" data-opt-type="checkbox">
-            <span>${escapeHtml(opt.label)}${opt.is_required ? ' *' : ''}</span>
+            <span>${escapeHtml(opt.label)}${opt.extra_price ? ' (+₹' + opt.extra_price + ')' : ''}${opt.is_required ? ' *' : ''}</span>
           </label>
         </div>
       `;
     }
     if (opt.option_type === 'select') {
-      const choices = (opt.choices || '').split(',').map((c) => c.trim()).filter(Boolean);
+      const choices = parseOptionChoices(opt.choices);
       return `
         <div class="option-field">
           <label>${escapeHtml(opt.label)}${opt.is_required ? ' *' : ''}</label>
           <select data-opt-id="${opt.id}" data-opt-type="select">
             <option value="">Select...</option>
-            ${choices.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('')}
+            ${choices.map((c) => `<option value="${escapeAttr(c.label)}" data-price="${c.price}">${escapeHtml(c.label)}${c.price > 0 ? ' (+₹' + c.price + ')' : ''}</option>`).join('')}
           </select>
         </div>
       `;
@@ -425,18 +426,49 @@ function renderOptionsForm() {
   }).join('');
 }
 
+// Splits answers into: informational custom_answers (shown on the dashboard) and priced
+// extraItems (inserted as real hb_order_items, same as menu items, so they flow through
+// the bill, WhatsApp bill, dashboard item summary, and reports for free).
 function collectOptionAnswers() {
-  const answers = [];
+  const customAnswers = [];
+  const extraItems = [];
+
   for (const opt of orderOptions) {
     const el = document.querySelector('[data-opt-id="' + opt.id + '"]');
-    let value = opt.option_type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim();
-    if (opt.is_required && opt.option_type !== 'checkbox' && !value) {
-      return { error: 'Please answer: ' + opt.label };
+
+    if (opt.option_type === 'checkbox') {
+      if (!el.checked) {
+        if (opt.is_required) customAnswers.push({ label: opt.label, value: 'No' });
+        continue;
+      }
+      if (opt.extra_price) {
+        extraItems.push({ item_name: opt.label, price: Number(opt.extra_price), qty: 1 });
+      } else {
+        customAnswers.push({ label: opt.label, value: 'Yes' });
+      }
+      continue;
     }
-    if (opt.option_type === 'checkbox' && !opt.is_required && !el.checked) continue;
-    answers.push({ label: opt.label, value: value });
+
+    if (opt.option_type === 'select') {
+      const value = el.value;
+      if (opt.is_required && !value) return { error: 'Please answer: ' + opt.label };
+      if (!value) continue;
+      const price = el.selectedOptions[0] ? Number(el.selectedOptions[0].dataset.price || 0) : 0;
+      if (price > 0) {
+        extraItems.push({ item_name: value, price: price, qty: 1 });
+      } else {
+        customAnswers.push({ label: opt.label, value: value });
+      }
+      continue;
+    }
+
+    // text
+    const value = el.value.trim();
+    if (opt.is_required && !value) return { error: 'Please answer: ' + opt.label };
+    if (value) customAnswers.push({ label: opt.label, value: value });
   }
-  return { answers: answers };
+
+  return { customAnswers: customAnswers, extraItems: extraItems };
 }
 
 function changeQty(itemId, delta) {
@@ -500,7 +532,7 @@ document.getElementById('placeOrderBtn').addEventListener('click', () => {
     return;
   }
 
-  submitOrder([]);
+  submitOrder([], []);
 });
 
 document.getElementById('optionsBackBtn').addEventListener('click', () => {
@@ -515,11 +547,13 @@ document.getElementById('optionsForm').addEventListener('submit', (e) => {
     showMsg(msgEl, result.error, 'error');
     return;
   }
-  submitOrder(result.answers);
+  submitOrder(result.customAnswers, result.extraItems);
 });
 
-async function submitOrder(customAnswers) {
-  const items = Object.values(cart);
+async function submitOrder(customAnswers, extraItems) {
+  const billableItems = Object.values(cart).concat((extraItems || []).map((i) => ({
+    id: null, name: i.item_name, price: i.price, unit: null, qty: i.qty
+  })));
   const msgEl = document.getElementById(orderOptions.length > 0 ? 'optionsMsg' : 'orderFormMsg');
   const btn = orderOptions.length > 0
     ? document.getElementById('optionsContinueBtn')
@@ -530,7 +564,7 @@ async function submitOrder(customAnswers) {
 
   try {
     const orderId = crypto.randomUUID();
-    const total = cartTotal();
+    const total = billableItems.reduce((sum, i) => sum + i.price * i.qty, 0);
 
     const { error: orderError } = await supabaseClient
       .from('hb_orders')
@@ -547,7 +581,7 @@ async function submitOrder(customAnswers) {
       });
     if (orderError) throw orderError;
 
-    const orderItemsPayload = items.map((i) => ({
+    const orderItemsPayload = billableItems.map((i) => ({
       order_id: orderId,
       menu_item_id: i.id,
       item_name: i.name,
@@ -570,7 +604,7 @@ async function submitOrder(customAnswers) {
 
     setLocalOrder({
       orderId: orderId,
-      items: items,
+      items: billableItems,
       totalAmount: total,
       placedAt: Date.now(),
       customerPhone: customerDraft.phone
@@ -579,7 +613,7 @@ async function submitOrder(customAnswers) {
     for (const key in cart) delete cart[key];
     renderCartBar();
 
-    showWaitingScreen(orderId, total, items);
+    showWaitingScreen(orderId, total, billableItems);
   } catch (err) {
     showMsg(msgEl, err.message || 'Something went wrong placing your order.', 'error');
     btn.disabled = false;

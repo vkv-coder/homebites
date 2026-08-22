@@ -99,6 +99,19 @@ function tagBadgeClass(tag) {
   return 'item-tag-badge';
 }
 
+// Parses a supplier's select-type order-option choices string, where a choice may
+// optionally carry a price after a pipe, e.g. "Pickup|0,Delivery|20" ->
+// [{label:'Pickup', price:0}, {label:'Delivery', price:20}]. Choices without a "|" are
+// treated as free (price 0).
+function parseOptionChoices(choicesStr) {
+  return (choicesStr || '').split(',').map((c) => c.trim()).filter(Boolean).map((c) => {
+    const parts = c.split('|');
+    const label = parts[0].trim();
+    const price = parts.length > 1 ? Number(parts[1]) : 0;
+    return { label: label, price: isNaN(price) ? 0 : price };
+  });
+}
+
 // Turns a business name into a URL-safe slug for the shareable order link.
 function slugify(str) {
   return (str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40);

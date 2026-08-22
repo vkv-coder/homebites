@@ -147,6 +147,18 @@ body {
   font-size: 14px;
 }
 
+.supplier-phone-line {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.supplier-phone-line a {
+  color: var(--brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .card {
   width: 100%;
   max-width: 420px;

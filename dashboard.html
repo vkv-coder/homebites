@@ -48,7 +48,7 @@
 </div>
 
 <footer class="site-footer">
-  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div><a href="privacy.html">Privacy Policy</a> &middot; <a href="mailto:info.anyapps@gmail.com">info.anyapps@gmail.com</a></div>
   <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
 </footer>
 
@@ -259,7 +259,7 @@ function showTrialMessage(trialStartedAt) {
   const trialEnd = new Date(trialStartedAt);
   trialEnd.setMonth(trialEnd.getMonth() + 1);
   const daysLeft = Math.ceil((trialEnd - new Date()) / (1000 * 60 * 60 * 24));
-  const priceLine = '₹199/month or ₹2000/year — contact vkvcoder.support@gmail.com to continue.';
+  const priceLine = '₹199/month or ₹2000/year — contact info.anyapps@gmail.com to continue.';
 
   if (daysLeft <= 0) {
     msgEl.textContent = 'Your free trial has ended. ' + priceLine;

@@ -12,7 +12,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // HtmlService instead of ContentService, which was causing every notification to double-send.
 const GAS_RELAY_URL = 'https://script.google.com/macros/s/AKfycbwNAxiSandIkgt4N6Df9eGzsaHsaIQHshvapiLdMpEsdtBX83jjAo5nCLLWMU4OqmMy/exec';
 
-const SUPPORT_EMAIL = 'vkvcoder.support@gmail.com';
+const SUPPORT_EMAIL = 'info.anyapps@gmail.com';
 const APP_DISPLAY_NAME = 'HomeBites';
 
 // Persists the logged-in session (supplier) in localStorage.

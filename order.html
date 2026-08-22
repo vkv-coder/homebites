@@ -27,6 +27,7 @@
     <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="supplierNameHeading">HomeBites</h1>
     <p class="tagline">Order from a home kitchen</p>
+    <p class="supplier-phone-line" style="display:none;"></p>
   </div>
   <div class="card">
     <h2>Your Phone Number</h2>
@@ -66,6 +67,7 @@
     <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="orderFormSupplierName">Supplier</h1>
     <p class="tagline" id="orderFormDeliveryLine">Delivering to...</p>
+    <p class="supplier-phone-line" style="display:none;"></p>
   </div>
 
   <div class="top-total-bar" id="topTotalBar">
@@ -111,6 +113,9 @@
 
     <div class="waiting-spinner"></div>
     <p style="color:var(--muted); font-size:13px;">Waiting for the supplier to confirm your payment...</p>
+
+    <button type="button" class="btn-outline" id="waitingBackBtn">&larr; Back to Menu (Recheck / Modify Order)</button>
+    <div class="msg" id="waitingBackMsg"></div>
   </div>
 </div>
 
@@ -119,6 +124,7 @@
     <div class="logo-mark supplier-logo-mark">H</div>
     <h1 id="billSupplierName">Supplier</h1>
     <p class="tagline">Order Confirmed</p>
+    <p class="supplier-phone-line" style="display:none;"></p>
   </div>
 
   <div class="card">
@@ -139,7 +145,7 @@
 </div>
 
 <footer class="site-footer footer-fixed">
-  <div><a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a></div>
+  <div><a href="mailto:info.anyapps@gmail.com">info.anyapps@gmail.com</a></div>
   <div class="powered-by">Powered by <span class="brand-any">Any</span><span class="brand-apps">Apps.in</span></div>
 </footer>
 
@@ -191,6 +197,17 @@ function applySupplierLogo() {
       el.innerHTML = '<img src="' + escapeHtml(supplierInfo.logo_url) + '" alt="' + escapeHtml(supplierInfo.business_name) + '" style="width:100%; height:100%; object-fit:cover; border-radius:18px;">';
     } else {
       el.textContent = 'H';
+    }
+  });
+}
+
+function applySupplierPhone() {
+  document.querySelectorAll('.supplier-phone-line').forEach((el) => {
+    if (supplierInfo.owner_phone) {
+      el.innerHTML = '<a href="tel:+91' + escapeHtml(supplierInfo.owner_phone) + '">&#128222; Call ' + escapeHtml(supplierInfo.business_name) + ': ' + escapeHtml(supplierInfo.owner_phone) + '</a>';
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
     }
   });
 }
@@ -551,7 +568,8 @@ document.getElementById('optionsForm').addEventListener('submit', (e) => {
 });
 
 async function submitOrder(customAnswers, extraItems) {
-  const billableItems = Object.values(cart).concat((extraItems || []).map((i) => ({
+  const cartItems = Object.values(cart);
+  const billableItems = cartItems.concat((extraItems || []).map((i) => ({
     id: null, name: i.item_name, price: i.price, unit: null, qty: i.qty
   })));
   const msgEl = document.getElementById(orderOptions.length > 0 ? 'optionsMsg' : 'orderFormMsg');
@@ -605,6 +623,7 @@ async function submitOrder(customAnswers, extraItems) {
     setLocalOrder({
       orderId: orderId,
       items: billableItems,
+      cartItems: cartItems,
       totalAmount: total,
       placedAt: Date.now(),
       customerPhone: customerDraft.phone
@@ -681,6 +700,49 @@ function stopPolling() {
   }
 }
 
+function restoreCart(cartItems) {
+  for (const key in cart) delete cart[key];
+  (cartItems || []).forEach((i) => { cart[i.id] = i; });
+  menuItems.forEach((item) => {
+    const el = document.getElementById('qty-' + item.id);
+    if (el) el.textContent = cart[item.id] ? cart[item.id].qty : 0;
+  });
+  renderCartBar();
+}
+
+document.getElementById('waitingBackBtn').addEventListener('click', async () => {
+  const msgEl = document.getElementById('waitingBackMsg');
+  const btn = document.getElementById('waitingBackBtn');
+
+  if (!currentOrderId) {
+    showOrderForm();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Going back...';
+
+  const { error } = await supabaseClient.rpc('hb_customer_cancel_order', {
+    p_order_id: currentOrderId,
+    p_phone: customerDraft.phone
+  });
+
+  btn.disabled = false;
+  btn.innerHTML = '&larr; Back to Menu (Recheck / Modify Order)';
+
+  if (error) {
+    showMsg(msgEl, 'Could not go back: ' + error.message, 'error');
+    return;
+  }
+
+  stopPolling();
+  const local = getLocalOrder();
+  clearLocalOrder();
+  currentOrderId = null;
+  restoreCart(local ? local.cartItems : []);
+  showOrderForm();
+});
+
 // ---------- Bill screen ----------
 
 function showBillScreen(status) {
@@ -739,6 +801,7 @@ document.getElementById('orderMoreBtn').addEventListener('click', () => {
   document.title = supplier.business_name + ' - Order';
   document.getElementById('supplierNameHeading').textContent = supplier.business_name;
   applySupplierLogo();
+  applySupplierPhone();
 
   await loadMenu();
   await loadOrderOptions();

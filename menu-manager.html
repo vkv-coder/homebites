@@ -364,7 +364,15 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
       loadMenu();
       return;
     }
-    await supabaseClient.from('hb_menu_items').update({ image_url: result.url }).eq('id', inserted.id);
+    const { error: imgError } = await supabaseClient.from('hb_menu_items').update({ image_url: result.url }).eq('id', inserted.id);
+    if (imgError) {
+      btn.disabled = false;
+      btn.textContent = 'Add Item';
+      showMsg(msgEl, 'Item added, but saving the photo failed: ' + imgError.message, 'error');
+      document.getElementById('addItemForm').reset();
+      loadMenu();
+      return;
+    }
   }
 
   btn.disabled = false;
